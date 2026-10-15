@@ -1091,7 +1091,8 @@ function renderRunMap(el) {
 // "GV111 · ANC→ENA→ANC · 11:30" — first-leg departure (delay-adjusted) at the end, set off by en spaces.
 function runOptionText(run) {
   const dep = adjustedLegs(run)[0].adjDep;
-  return `${run.flightNum} · ${runStops(run).join("→")} · ${fmtMin(dep)}`;
+  // Time first so it stays visible when a narrow phone select truncates the label.
+  return `${fmtMin(dep)} · ${run.flightNum} · ${runStops(run).join("→")}`;
 }
 
 function livePlanesCardHtml() {
