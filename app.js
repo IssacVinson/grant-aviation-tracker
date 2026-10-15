@@ -80,14 +80,94 @@ const SEED_MANIFESTS = {
   GV2905: { indices: [8, 9, 10, 11, 0], checkedIn: 2 }
 };
 
-const STORAGE_KEY = "grant-aviation-data";
+const AIRPORTS = {
+  ANC: "Anchorage", ENA: "Kenai", BET: "Bethel", DLG: "Dillingham", AKN: "King Salmon",
+  CDB: "Cold Bay", DUT: "Dutch Harbor", EMK: "Emmonak",
+  TWA: "Twin Hills", TOG: "Togiak", KMO: "Manokotak", WKK: "Aleknagik",
+  VAK: "Chevak", HPB: "Hooper Bay", KOT: "Kotlik", KPN: "Kipnuk", KWK: "Kwigillingok",
+  OOK: "Toksook Bay", TNK: "Tununak", KKH: "Kongiganak",
+  KLL: "Levelock", IGG: "Igiugig", KVC: "King Cove", KFP: "False Pass", AKB: "Atka",
+  AUK: "Alakanuk", SXP: "Nunam Iqua", MOU: "Mountain Village", PQS: "Pilot Station"
+};
+
+// Employee home bases (selectable on the Base tab).
+const BASES = ["ANC", "ENA", "BET", "DLG", "AKN", "CDB", "DUT", "EMK"];
+
+// Mock multi-stop runs. Times are a template day centred on 12:00; buildRuns() shifts the whole
+// day so it is centred on the time the app was first opened today, so some runs are always in progress.
+const RUN_TEMPLATES = [
+  { id: "R-ANC-1", flightNum: "GV101", aircraft: "Piper Navajo", base: "ANC",
+    legs: [["ANC", "ENA", "07:00", "07:35"], ["ENA", "ANC", "08:00", "08:35"]] },
+  { id: "R-ANC-2", flightNum: "GV111", aircraft: "Cessna 208 Caravan", base: "ANC",
+    legs: [["ANC", "ENA", "11:30", "12:05"], ["ENA", "ANC", "12:30", "13:05"]] },
+  { id: "R-ANC-3", flightNum: "GV121", aircraft: "Piper Navajo", base: "ANC",
+    legs: [["ANC", "ENA", "16:00", "16:35"], ["ENA", "ANC", "17:00", "17:35"]] },
+  { id: "R-ENA-1", flightNum: "GV131", aircraft: "Cessna 208 Caravan", base: "ENA",
+    legs: [["ENA", "ANC", "09:30", "10:05"], ["ANC", "ENA", "10:45", "11:20"]] },
+  { id: "R-BET-1", flightNum: "GV301", aircraft: "Cessna 208 Caravan", base: "BET",
+    legs: [["BET", "VAK", "08:30", "09:15"], ["VAK", "HPB", "09:35", "09:55"], ["HPB", "BET", "10:15", "11:05"]] },
+  { id: "R-BET-2", flightNum: "GV311", aircraft: "Cessna 208 Caravan", base: "BET",
+    legs: [["BET", "EMK", "10:15", "11:30"], ["EMK", "KOT", "11:50", "12:10"], ["KOT", "BET", "12:30", "13:45"]] },
+  { id: "R-BET-3", flightNum: "GV321", aircraft: "Piper Navajo", base: "BET",
+    legs: [["BET", "KPN", "12:00", "12:40"], ["KPN", "KWK", "13:00", "13:15"], ["KWK", "BET", "13:35", "14:10"]] },
+  { id: "R-BET-4", flightNum: "GV331", aircraft: "Cessna 208 Caravan", base: "BET",
+    legs: [["BET", "OOK", "15:00", "15:45"], ["OOK", "TNK", "16:05", "16:20"], ["TNK", "BET", "16:40", "17:30"]] },
+  { id: "R-BET-5", flightNum: "GV341", aircraft: "Cessna 208 Caravan", base: "BET",
+    legs: [["BET", "KKH", "20:30", "21:05"], ["KKH", "BET", "21:25", "22:00"]] },
+  { id: "R-DLG-1", flightNum: "GV401", aircraft: "Cessna 208 Caravan", base: "DLG",
+    legs: [["DLG", "TWA", "09:00", "09:30"], ["TWA", "TOG", "09:50", "10:05"], ["TOG", "DLG", "10:25", "11:00"]] },
+  { id: "R-DLG-2", flightNum: "GV411", aircraft: "Piper Navajo", base: "DLG",
+    legs: [["DLG", "KMO", "13:30", "13:50"], ["KMO", "WKK", "14:10", "14:30"], ["WKK", "DLG", "14:50", "15:05"]] },
+  { id: "R-AKN-1", flightNum: "GV501", aircraft: "Cessna 208 Caravan", base: "AKN",
+    legs: [["AKN", "KLL", "10:00", "10:30"], ["KLL", "IGG", "10:50", "11:20"], ["IGG", "AKN", "11:40", "12:30"]] },
+  { id: "R-AKN-2", flightNum: "GV511", aircraft: "Piper Navajo", base: "AKN",
+    legs: [["AKN", "DLG", "15:30", "16:10"], ["DLG", "AKN", "16:40", "17:20"]] },
+  { id: "R-CDB-1", flightNum: "GV601", aircraft: "Cessna 208 Caravan", base: "CDB",
+    legs: [["CDB", "KVC", "11:00", "11:20"], ["KVC", "KFP", "11:40", "12:10"], ["KFP", "CDB", "12:30", "13:00"]] },
+  { id: "R-DUT-1", flightNum: "GV701", aircraft: "Piper Navajo", base: "DUT",
+    legs: [["DUT", "AKB", "09:30", "11:15"], ["AKB", "DUT", "12:00", "13:45"]] },
+  { id: "R-EMK-1", flightNum: "GV801", aircraft: "Cessna 208 Caravan", base: "EMK",
+    legs: [["EMK", "AUK", "12:30", "12:45"], ["AUK", "SXP", "13:05", "13:20"], ["SXP", "EMK", "13:40", "14:00"]] },
+  { id: "R-EMK-2", flightNum: "GV811", aircraft: "Cessna 208 Caravan", base: "EMK",
+    legs: [["EMK", "MOU", "15:30", "15:55"], ["MOU", "PQS", "16:15", "16:35"], ["PQS", "EMK", "16:55", "17:35"]] }
+];
+
+const STORAGE_KEY = "grant-aviation-data-v3";
+
+function isPlainObject(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
 
 function loadData() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  const data = raw ? JSON.parse(raw) : { employeeMode: false };
+  let data = null;
+  try {
+    data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  } catch (e) {
+    data = null;
+  }
+  if (!isPlainObject(data)) data = {};
+  data.employeeMode = !!data.employeeMode;
   if (!Array.isArray(data.trips)) data.trips = [];
-  if (!data.delays || typeof data.delays !== "object") data.delays = {};
-  if (!data.flightManifests || typeof data.flightManifests !== "object") data.flightManifests = {};
+  if (!isPlainObject(data.delays)) data.delays = {};
+  if (!isPlainObject(data.flightManifests)) data.flightManifests = {};
+  if (!BASES.includes(data.employeeBase)) data.employeeBase = "BET";
+  if (!isPlainObject(data.runDelays)) data.runDelays = {};
+  // The mock run day is anchored once per calendar day; a new day starts with fresh runs and no delays.
+  const today = localDateISO(new Date());
+  const anchor = data.runAnchor;
+  if (!isPlainObject(anchor) || anchor.date !== today || !Number.isFinite(anchor.startMin)) {
+    data.runAnchor = { date: today, startMin: Math.floor(minutesSinceMidnight(today) / 15) * 15 };
+    data.runDelays = {};
+  }
+  const validDelay = d => isPlainObject(d) && Number.isFinite(d.minutes) && Number.isInteger(d.fromLegIndex) && d.fromLegIndex >= 0;
+  Object.keys(data.runDelays).forEach(id => {
+    const d = data.runDelays[id];
+    if (!validDelay(d)) delete data.runDelays[id];
+    else if (!Array.isArray(d.history) || !d.history.every(validDelay)) delete d.history;
+  });
+  Object.keys(data.flightManifests).forEach(num => {
+    if (!Array.isArray(data.flightManifests[num])) delete data.flightManifests[num];
+  });
   // Add seed manifests for existing users too, without touching manifests that already exist.
   Object.keys(SEED_MANIFESTS).forEach(num => {
     if (data.flightManifests[num]) return;
@@ -111,20 +191,59 @@ function saveData(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+function localDateISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Minutes elapsed since local midnight of the given YYYY-MM-DD date (can exceed 1440 or be negative).
+function minutesSinceMidnight(dateISO) {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  return (Date.now() - new Date(y, m - 1, d).getTime()) / 60000;
+}
+
 let state = loadData();
 let selectedFlight = null;
+const RUNS = buildRuns();
+let selectedMapRunId = null;
+
+const NAV_TABS = {
+  passenger: [
+    { page: "home", label: "Home", render: renderHome },
+    { page: "book", label: "Book", render: renderBook },
+    { page: "trips", label: "Trips", render: renderTrips },
+    { page: "map", label: "Map", render: renderMap },
+    { page: "profile", label: "Profile", render: renderProfile }
+  ],
+  employee: [
+    { page: "base", label: "Base", render: renderBase },
+    { page: "runs", label: "Runs", render: renderRuns },
+    { page: "runmap", label: "Map", render: renderRunMap },
+    { page: "tools", label: "Tools", render: renderTools }
+  ]
+};
+
+let currentPage = currentTabs()[0].page;
+
+function currentTabs() {
+  return state.employeeMode ? NAV_TABS.employee : NAV_TABS.passenger;
+}
+
+function renderNav() {
+  document.querySelector(".bottom-nav").innerHTML = currentTabs().map(t =>
+    `<button data-page="${t.page}"${t.page === currentPage ? ' class="active"' : ""}>${t.label}</button>`
+  ).join("");
+}
 
 function render() {
-  const page = document.querySelector(".bottom-nav button.active")?.dataset.page || "home";
-  const content = document.getElementById("content");
-  const roleToggle = document.getElementById("roleToggle");
-  roleToggle.textContent = state.employeeMode ? "Employee" : "Passenger";
-
-  if (page === "home") renderHome(content);
-  else if (page === "book") renderBook(content);
-  else if (page === "trips") renderTrips(content);
-  else if (page === "map") renderMap(content);
-  else if (page === "profile") renderProfile(content);
+  const tabs = currentTabs();
+  let tab = tabs.find(t => t.page === currentPage);
+  if (!tab) {
+    tab = tabs[0];
+    currentPage = tab.page;
+    renderNav();
+  }
+  document.getElementById("roleToggle").textContent = state.employeeMode ? "Employee" : "Passenger";
+  tab.render(document.getElementById("content"));
 }
 
 function renderHome(el) {
@@ -337,6 +456,7 @@ function renderMap(el) {
 async function loadMap() {
   const list = document.getElementById("flightList");
   const mapEl = document.getElementById("map");
+  if (!list || !mapEl) return;
   try {
     const res = await fetch("https://opensky-network.org/api/states/all?lamin=51&lomin=-180&lamax=71&lomax=-130");
     const data = await res.json();
@@ -362,8 +482,22 @@ async function loadMap() {
 }
 
 function renderProfile(el) {
-  if (state.employeeMode) {
-    el.innerHTML = `
+  el.innerHTML = `
+    <h2>Profile</h2>
+    <div class="card">
+      <p>Passenger mode</p>
+      <button class="btn" onclick="toggleRole()">Switch to Employee (demo)</button>
+    </div>
+    <div class="card">
+      <h3>About</h3>
+      <p style="font-size:0.9rem;">Unofficial prototype for Grant Aviation. Destinations include Bethel hubs, Kenai, Dillingham, Dutch Harbor, Cold Bay, and dozens of villages.</p>
+      <p style="font-size:0.85rem; margin-top:0.5rem;">Phone: 888-359-4726</p>
+    </div>
+  `;
+}
+
+function renderTools(el) {
+  el.innerHTML = `
       <h2>Employee Tools</h2>
       <div class="card">
         <h3>Flight Status</h3>
@@ -399,27 +533,308 @@ function renderProfile(el) {
       </div>
       <button class="btn btn-outline" onclick="toggleRole()">Switch to Passenger</button>
     `;
-    renderFlightStatus();
-  } else {
-    el.innerHTML = `
-      <h2>Profile</h2>
-      <div class="card">
-        <p>Passenger mode</p>
-        <button class="btn" onclick="toggleRole()">Switch to Employee (demo)</button>
-      </div>
-      <div class="card">
-        <h3>About</h3>
-        <p style="font-size:0.9rem;">Unofficial prototype for Grant Aviation. Destinations include Bethel hubs, Kenai, Dillingham, Dutch Harbor, Cold Bay, and dozens of villages.</p>
-        <p style="font-size:0.85rem; margin-top:0.5rem;">Phone: 888-359-4726</p>
-      </div>
-    `;
-  }
+  renderFlightStatus();
 }
 
+// Switching mode rebuilds the bottom nav and lands on that mode's first tab.
 function toggleRole() {
   state.employeeMode = !state.employeeMode;
   saveData(state);
+  currentPage = currentTabs()[0].page;
+  renderNav();
   render();
+}
+
+// ---------- Employee runs ----------
+
+function toMinutes(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// Absolute minutes from run-day midnight → "HH:MM", with "+1d" when past midnight.
+function fmtMin(total) {
+  const t = Math.round(total);
+  const day = Math.floor(t / 1440);
+  const m = ((t % 1440) + 1440) % 1440;
+  const hhmm = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return day > 0 ? `${hhmm} +${day}d` : hhmm;
+}
+
+function airportLabel(code) {
+  return AIRPORTS[code] ? `${AIRPORTS[code]} (${code})` : code;
+}
+
+// Turn RUN_TEMPLATES into today's runs, shifted so the template's noon lands on today's anchor time.
+function buildRuns() {
+  const earliest = Math.min(...RUN_TEMPLATES.map(t => toMinutes(t.legs[0][2])));
+  const shift = Math.max(state.runAnchor.startMin - 12 * 60, -earliest);
+  return RUN_TEMPLATES.map(t => {
+    let prev = -Infinity;
+    const legs = t.legs.map(([from, to, dep, arr]) => {
+      let depMin = toMinutes(dep) + shift;
+      while (depMin < prev) depMin += 1440;
+      let arrMin = toMinutes(arr) + shift;
+      while (arrMin <= depMin) arrMin += 1440;
+      prev = arrMin;
+      return { from, to, dep: fmtMin(depMin % 1440), arr: fmtMin(arrMin % 1440), depMin, arrMin };
+    });
+    return { id: t.id, flightNum: t.flightNum, aircraft: t.aircraft, base: t.base, date: state.runAnchor.date, legs };
+  });
+}
+
+function runNow(run) {
+  return minutesSinceMidnight(run.date);
+}
+
+function runsForBase(base) {
+  return RUNS.filter(r => r.legs.some(l => l.from === base || l.to === base));
+}
+
+function runStops(run) {
+  return [run.legs[0].from, ...run.legs.map(l => l.to)];
+}
+
+// Delay in minutes applied to each leg. Each recorded delay shifts its fromLegIndex leg and all later ones.
+function legOffsets(run) {
+  const rec = state.runDelays[run.id];
+  const entries = !rec ? [] : (rec.history && rec.history.length ? rec.history : [rec]);
+  return run.legs.map((_, i) => entries.reduce((sum, e) => sum + (i >= e.fromLegIndex ? e.minutes : 0), 0));
+}
+
+function adjustedLegs(run) {
+  const offsets = legOffsets(run);
+  return run.legs.map((l, i) => ({ ...l, delay: offsets[i], adjDep: l.depMin + offsets[i], adjArr: l.arrMin + offsets[i] }));
+}
+
+function runStatus(run) {
+  const legs = adjustedLegs(run);
+  const now = runNow(run);
+  const delay = Math.max(...legs.map(l => l.delay));
+  let status = "Scheduled";
+  if (now >= legs[legs.length - 1].adjArr) status = "Completed";
+  else if (now >= legs[0].adjDep) status = "In progress";
+  return { status, delay, legs, now };
+}
+
+function statusBadges(info) {
+  const styles = {
+    "Scheduled": "background:#eef4ff; color:var(--navy);",
+    "In progress": "",
+    "Completed": "background:#f2f4f7; color:var(--muted);"
+  };
+  const cls = info.status === "In progress" ? " status-on-time" : "";
+  let html = `<span class="status-badge${cls}" style="${styles[info.status]}">${info.status}</span>`;
+  if (info.delay > 0 && info.status !== "Completed") {
+    html += ` <span class="status-badge status-delayed">Delayed +${info.delay} min</span>`;
+  }
+  return html;
+}
+
+// Add a delay to every leg whose (adjusted) arrival hasn't passed yet; cumulative with earlier delays.
+function applyRunDelay(runId, minutes) {
+  const run = RUNS.find(r => r.id === runId);
+  minutes = Math.round(Number(minutes));
+  if (!run || !Number.isFinite(minutes) || minutes <= 0) return alert("Enter a delay in minutes");
+  const info = runStatus(run);
+  const fromLegIndex = info.legs.findIndex(l => l.adjArr > info.now);
+  if (fromLegIndex === -1) return alert(run.flightNum + " has already completed");
+  const prev = state.runDelays[runId];
+  const history = prev ? (prev.history && prev.history.length ? prev.history.slice() : [{ minutes: prev.minutes, fromLegIndex: prev.fromLegIndex, appliedAt: prev.appliedAt }]) : [];
+  const appliedAt = new Date().toISOString();
+  history.push({ minutes, fromLegIndex, appliedAt });
+  state.runDelays[runId] = {
+    minutes: history.reduce((s, h) => s + h.minutes, 0),
+    fromLegIndex: Math.min(...history.map(h => h.fromLegIndex)),
+    appliedAt,
+    history
+  };
+  saveData(state);
+  render();
+}
+
+function applyCustomRunDelay(runId) {
+  const input = document.getElementById("delay-custom-" + runId);
+  applyRunDelay(runId, input ? input.value : NaN);
+}
+
+function clearRunDelay(runId) {
+  delete state.runDelays[runId];
+  saveData(state);
+  render();
+}
+
+function setEmployeeBase(code) {
+  if (!BASES.includes(code)) return;
+  state.employeeBase = code;
+  selectedMapRunId = null;
+  saveData(state);
+  render();
+}
+
+function baseSelectHtml() {
+  return `<select onchange="setEmployeeBase(this.value)">
+    ${BASES.map(c => `<option value="${c}"${c === state.employeeBase ? " selected" : ""}>${airportLabel(c)}</option>`).join("")}
+  </select>`;
+}
+
+function renderBase(el) {
+  const base = state.employeeBase;
+  const runs = runsForBase(base);
+  const infos = runs.map(r => ({ run: r, info: runStatus(r) }));
+  const count = s => infos.filter(x => x.info.status === s).length;
+  const delayed = infos.filter(x => x.info.delay > 0 && x.info.status !== "Completed").length;
+  el.innerHTML = `
+    <h2>Home Base</h2>
+    <div class="card">
+      <label>Base airport</label>
+      ${baseSelectHtml()}
+    </div>
+    <div class="card">
+      <h3>Today at ${airportLabel(base)}</h3>
+      ${runs.length ? `
+        <p style="font-size:0.9rem;">${runs.length} run(s) · ${count("In progress")} in progress · ${count("Scheduled")} scheduled · ${count("Completed")} completed${delayed ? ` · <span style="color:var(--crimson); font-weight:600;">${delayed} delayed</span>` : ""}</p>
+        ${infos.map(({ run, info }) => `
+          <div style="font-size:0.85rem; padding:0.5rem 0; border-bottom:1px solid #eee;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+              <strong>${run.flightNum}</strong>
+              <span>${statusBadges(info)}</span>
+            </div>
+            <div style="color:var(--muted);">${runStops(run).join(" → ")} · ${fmtMin(info.legs[0].adjDep)}–${fmtMin(info.legs[info.legs.length - 1].adjArr)}</div>
+          </div>`).join("")}
+      ` : `<p style="font-size:0.85rem; color:var(--muted);">No runs touch this base today.</p>`}
+      <button class="btn" onclick="goTo('runs')">Manage Runs</button>
+      <button class="btn btn-outline" onclick="goTo('runmap')">Run Map</button>
+    </div>
+    <div class="note">Mock schedule for the prototype. Run times are generated for today around the time you first opened the app.</div>
+  `;
+}
+
+function renderRuns(el) {
+  const base = state.employeeBase;
+  const runs = runsForBase(base);
+  el.innerHTML = `
+    <h2>Runs · ${base}</h2>
+    ${runs.length ? runs.map(runCardHtml).join("") : `<div class="card"><p>No runs touch ${airportLabel(base)} today.</p><button class="btn btn-outline" onclick="goTo('base')">Change base</button></div>`}
+  `;
+}
+
+function runCardHtml(run) {
+  const info = runStatus(run);
+  return `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+        <strong>${run.flightNum}</strong>
+        <span>${statusBadges(info)}</span>
+      </div>
+      <p style="font-size:0.85rem; color:var(--muted);">${run.aircraft}</p>
+      <p style="margin:0.25rem 0 0.5rem;">${runStops(run).join(" → ")}</p>
+      ${info.legs.map(l => `
+        <div style="font-size:0.85rem; padding:0.3rem 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; gap:0.5rem;${info.now >= l.adjArr ? " color:var(--muted);" : ""}">
+          <span>${l.from} → ${l.to}</span>
+          <span style="text-align:right;">
+            ${l.delay ? `<s style="color:var(--muted);">${fmtMin(l.depMin)}–${fmtMin(l.arrMin)}</s><br><b style="color:var(--crimson);">${fmtMin(l.adjDep)}–${fmtMin(l.adjArr)}</b>` : `${fmtMin(l.depMin)}–${fmtMin(l.arrMin)}`}
+          </span>
+        </div>`).join("")}
+      ${info.status === "Completed" ? "" : `
+        <div style="display:flex; gap:0.4rem; margin-top:0.5rem;">
+          ${[15, 30, 40, 60].map(m => `<button class="btn btn-outline" style="padding:0.5rem 0;" onclick="applyRunDelay('${run.id}', ${m})">+${m}</button>`).join("")}
+        </div>
+        <div style="display:flex; gap:0.4rem; align-items:center;">
+          <input type="number" id="delay-custom-${run.id}" min="1" max="720" placeholder="Custom min" style="flex:1;">
+          <button class="btn" style="width:auto; margin-top:0;" onclick="applyCustomRunDelay('${run.id}')">Apply</button>
+        </div>`}
+      ${info.delay ? `<button class="btn btn-outline" onclick="clearRunDelay('${run.id}')">Clear delay</button>` : ""}
+    </div>
+  `;
+}
+
+function renderRunMap(el) {
+  const base = state.employeeBase;
+  let runs = runsForBase(base);
+  const fallback = !runs.length;
+  if (fallback) runs = RUNS;
+  if (!runs.some(r => r.id === selectedMapRunId)) selectedMapRunId = runs[0].id;
+  el.innerHTML = `
+    <h2>Run Map</h2>
+    <div class="card">
+      <label>Run</label>
+      <select onchange="selectMapRun(this.value)">
+        ${runs.map(r => `<option value="${r.id}"${r.id === selectedMapRunId ? " selected" : ""}>${r.flightNum} · ${runStops(r).join("→")}</option>`).join("")}
+      </select>
+      ${fallback ? `<p style="font-size:0.8rem; color:var(--muted);">No runs touch ${base} today — showing all runs.</p>` : ""}
+      <div id="runProgress"></div>
+    </div>
+    <div class="card">
+      <h3>Live Grant Planes</h3>
+      <div id="liveMapArea"><button class="btn btn-outline" onclick="showLivePlanes()">Show live OpenSky list</button></div>
+    </div>
+  `;
+  renderRunProgress();
+}
+
+function selectMapRun(id) {
+  selectedMapRunId = id;
+  renderRunProgress();
+}
+
+// Position along the run as a fraction 0..1, where each leg takes an equal share of the bar.
+function runPosition(legs, now) {
+  const n = legs.length;
+  if (now < legs[0].adjDep) return 0;
+  for (let i = 0; i < n; i++) {
+    const l = legs[i];
+    if (now < l.adjDep) return i / n; // on the ground at the stop before leg i
+    if (now < l.adjArr) return (i + (now - l.adjDep) / (l.adjArr - l.adjDep)) / n;
+  }
+  return 1;
+}
+
+function renderRunProgress() {
+  const out = document.getElementById("runProgress");
+  const run = RUNS.find(r => r.id === selectedMapRunId);
+  if (!out || !run) return;
+  const info = runStatus(run);
+  const legs = info.legs;
+  const stops = runStops(run);
+  const pct = runPosition(legs, info.now) * 100;
+  const n = legs.length;
+  const stopRows = stops.map((code, i) => {
+    const arr = i > 0 ? legs[i - 1].adjArr : null;
+    const dep = i < n ? legs[i].adjDep : null;
+    const passed = i < n ? info.now >= dep : info.now >= arr;
+    return `
+      <div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; gap:0.5rem;">
+        <span><span style="display:inline-block; width:1.2rem; color:var(--success); font-weight:700;">${passed ? "✓" : ""}</span>${airportLabel(code)}</span>
+        <span style="color:var(--muted); text-align:right;">${arr !== null ? "arr " + fmtMin(arr) : ""}${arr !== null && dep !== null ? " · " : ""}${dep !== null ? "dep " + fmtMin(dep) : ""}</span>
+      </div>`;
+  }).join("");
+  out.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem;">
+      <span style="font-size:0.85rem;">${run.flightNum} · ${run.aircraft}</span>
+      <span>${statusBadges(info)}</span>
+    </div>
+    <div style="position:relative; height:12px; margin:1.25rem 0.5rem 0.25rem; border-radius:6px; overflow:visible; background:var(--crimson);">
+      <div style="position:absolute; left:0; top:0; bottom:0; width:${pct}%; background:var(--success); border-radius:6px 0 0 6px;"></div>
+      ${stops.map((_, i) => `<div style="position:absolute; left:${(i / n) * 100}%; top:-3px; width:2px; height:18px; margin-left:-1px; background:var(--navy);"></div>`).join("")}
+      <div style="position:absolute; left:${pct}%; top:50%; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:white; border:3px solid var(--navy); box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
+    </div>
+    <div style="position:relative; height:1.2rem; margin:0 0.5rem 0.75rem; font-size:0.7rem; color:var(--muted);">
+      ${stops.map((code, i) => `<span style="position:absolute; left:${(i / n) * 100}%; transform:translateX(${i === 0 ? "0" : i === n ? "-100%" : "-50%"});">${code}</span>`).join("")}
+    </div>
+    ${stopRows}
+  `;
+}
+
+function showLivePlanes() {
+  const area = document.getElementById("liveMapArea");
+  if (!area) return;
+  area.innerHTML = `
+    <div id="map" style="padding:0.75rem; background:#e4e7ec; border-radius:8px; color:var(--muted); font-size:0.85rem;">Loading…</div>
+    <div id="flightList" style="margin-top:0.5rem;"></div>
+    <button class="btn btn-outline" onclick="loadMap()">Refresh</button>
+  `;
+  loadMap();
 }
 
 // All flights an employee can post updates for: mock schedule plus booked trips, unique by flight number.
@@ -556,16 +971,24 @@ function scanPass() {
 }
 
 function goTo(page) {
-  document.querySelectorAll(".bottom-nav button").forEach(b => b.classList.remove("active"));
-  document.querySelector(`[data-page="${page}"]`).classList.add("active");
+  currentPage = page;
+  renderNav();
   render();
 }
 
-document.querySelectorAll(".bottom-nav button").forEach(btn => {
-  btn.addEventListener("click", () => goTo(btn.dataset.page));
+// One delegated listener on the nav, so rebuilding its buttons never stacks handlers.
+document.querySelector(".bottom-nav").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-page]");
+  if (btn) goTo(btn.dataset.page);
 });
 
 document.getElementById("roleToggle").addEventListener("click", toggleRole);
 
+// Keep the run map position current without wiping the live planes list.
+setInterval(() => {
+  if (state.employeeMode && currentPage === "runmap") renderRunProgress();
+}, 60000);
+
 // Init
+renderNav();
 render();
