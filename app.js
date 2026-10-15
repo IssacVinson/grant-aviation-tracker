@@ -72,6 +72,48 @@ const MOCK_FLIGHTS = {
   ]
 };
 
+// Mock legs used to build connecting itineraries: [num, from, to, dep, arr] (24h local).
+// Kenai and the villages reach the hubs through Anchorage; villages reach Anchorage through their hub.
+// Real direct routes in MOCK_FLIGHTS (except "default") and the PASSENGER_RUN_IDS runs are added on top.
+const CONNECTION_FLIGHTS = [
+  // Anchorage ↔ hubs
+  ["GV3101", "ANC", "BET", "07:30", "09:00"], ["GV3103", "ANC", "BET", "11:00", "12:30"], ["GV3105", "ANC", "BET", "15:30", "17:00"],
+  ["GV3102", "BET", "ANC", "09:45", "11:15"], ["GV3104", "BET", "ANC", "11:45", "13:15"], ["GV3106", "BET", "ANC", "17:00", "18:30"],
+  ["GV3201", "ANC", "DLG", "07:30", "08:40"], ["GV3203", "ANC", "DLG", "11:00", "12:10"], ["GV3205", "ANC", "DLG", "16:00", "17:10"],
+  ["GV3202", "DLG", "ANC", "09:20", "10:30"], ["GV3204", "DLG", "ANC", "11:00", "12:10"], ["GV3206", "DLG", "ANC", "18:00", "19:10"],
+  ["GV3301", "ANC", "AKN", "08:00", "09:05"], ["GV3303", "ANC", "AKN", "14:00", "15:05"],
+  ["GV3302", "AKN", "ANC", "10:00", "11:05"], ["GV3304", "AKN", "ANC", "16:00", "17:05"],
+  ["GV3401", "ANC", "DUT", "07:30", "10:20"], ["GV3403", "ANC", "DUT", "13:00", "15:50"],
+  ["GV3402", "DUT", "ANC", "10:00", "12:50"], ["GV3404", "DUT", "ANC", "16:45", "19:35"],
+  ["GV3501", "ANC", "CDB", "08:00", "10:20"], ["GV3503", "ANC", "CDB", "13:30", "15:50"],
+  ["GV3502", "CDB", "ANC", "11:00", "13:20"], ["GV3504", "CDB", "ANC", "16:30", "18:50"],
+  // Bethel ↔ villages (Bethel → Chevak and Bethel → Emmonak come from MOCK_FLIGHTS)
+  ["GV2906", "VAK", "BET", "09:35", "10:20"], ["GV2912", "VAK", "BET", "12:05", "12:50"], ["GV2922", "VAK", "BET", "15:35", "16:20"],
+  ["GV2931", "BET", "HPB", "09:00", "09:50"], ["GV2933", "BET", "HPB", "13:15", "14:05"],
+  ["GV2932", "HPB", "BET", "10:10", "11:00"], ["GV2934", "HPB", "BET", "14:25", "15:15"],
+  ["GV2941", "BET", "KPN", "08:00", "08:40"], ["GV2943", "BET", "KPN", "14:00", "14:40"],
+  ["GV2942", "KPN", "BET", "09:00", "09:40"], ["GV2944", "KPN", "BET", "15:00", "15:40"],
+  ["GV1611", "EMK", "BET", "11:15", "12:30"], ["GV1631", "EMK", "BET", "14:15", "15:15"], ["GV1651", "EMK", "BET", "17:45", "18:45"],
+  // Emmonak ↔ Kotlik
+  ["GV8101", "EMK", "KOT", "11:30", "11:50"], ["GV8103", "EMK", "KOT", "14:30", "14:50"], ["GV8105", "EMK", "KOT", "18:00", "18:20"],
+  ["GV8102", "KOT", "EMK", "12:10", "12:30"], ["GV8104", "KOT", "EMK", "15:10", "15:30"], ["GV8106", "KOT", "EMK", "18:40", "19:00"],
+  // Bristol Bay
+  ["GV4101", "DLG", "TOG", "08:00", "08:35"], ["GV4103", "DLG", "TOG", "13:00", "13:35"], ["GV4105", "DLG", "TOG", "17:15", "17:50"],
+  ["GV4102", "TOG", "DLG", "08:55", "09:30"], ["GV4104", "TOG", "DLG", "13:55", "14:30"], ["GV4106", "TOG", "DLG", "18:10", "18:45"],
+  ["GV4201", "AKN", "DLG", "09:30", "10:10"], ["GV4203", "AKN", "DLG", "13:00", "13:40"],
+  ["GV4202", "DLG", "AKN", "10:40", "11:20"], ["GV4204", "DLG", "AKN", "14:10", "14:50"],
+  // Aleutians
+  ["GV7101", "DUT", "AKB", "11:00", "12:45"], ["GV7102", "AKB", "DUT", "13:15", "15:00"],
+  ["GV9201", "CDB", "KVC", "16:30", "16:50"], ["GV9203", "CDB", "KVC", "08:20", "08:40"],
+  ["GV9202", "KVC", "CDB", "17:10", "17:30"], ["GV9204", "KVC", "CDB", "09:00", "09:20"]
+];
+
+// Employee runs passengers can book onto; consecutive legs share one flight number (stay on the plane).
+const PASSENGER_RUN_IDS = ["R-BET-1", "R-BET-2", "R-BET-3", "R-DLG-1", "R-CDB-1", "R-DUT-1"];
+const MIN_LAYOVER = 40;   // minutes, when changing planes
+const MAX_LAYOVER = 360;  // no overnight connections in the mock
+const MAX_ITINERARIES = 3;
+
 // Obviously fake passengers for demo manifests. Phones use the fictional 555-01xx range only.
 const FAKE_PASSENGERS = [
   { name: "Testy McTesterson", phone: "(907) 555-0101" },
@@ -216,7 +258,8 @@ function minutesSinceMidnight(dateISO) {
 }
 
 let state = loadData();
-let selectedFlight = null;
+let selectedFlight = null; // selected itinerary on the Book page
+let bookItineraries = [];
 const RUNS = buildRuns();
 let selectedMapRunId = null;
 
@@ -285,6 +328,143 @@ function getFlightsForRoute(from, to) {
   return MOCK_FLIGHTS[key] || MOCK_FLIGHTS["default"];
 }
 
+// ---------- Itineraries (direct + connecting) ----------
+
+function airportCodeOf(label) {
+  const m = /\(([A-Z]{3})\)/.exec(label || "");
+  return m ? m[1] : label;
+}
+
+// 85 → "1h 25m", 45 → "45m", 120 → "2h".
+function fmtDuration(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return [h ? `${h}h` : "", m || !h ? `${m}m` : ""].filter(Boolean).join(" ");
+}
+
+// Every bookable leg as { num, from, to, dep, arr } with airport codes.
+function bookableLegs() {
+  const legs = [];
+  Object.keys(MOCK_FLIGHTS).forEach(key => {
+    if (key === "default") return;
+    const [from, to] = key.split("-").map(airportCodeOf);
+    MOCK_FLIGHTS[key].forEach(f => legs.push({ num: f.num, from, to, dep: f.dep, arr: f.arr }));
+  });
+  CONNECTION_FLIGHTS.forEach(([num, from, to, dep, arr]) => legs.push({ num, from, to, dep, arr }));
+  RUN_TEMPLATES.filter(t => PASSENGER_RUN_IDS.includes(t.id)).forEach(t => {
+    t.legs.forEach(([from, to, dep, arr]) => legs.push({ num: t.flightNum, from, to, dep, arr }));
+  });
+  return legs;
+}
+
+function itineraryFromLegs(path) {
+  const legs = path.map(p => ({
+    num: p.leg.num, from: airportLabel(p.leg.from), to: airportLabel(p.leg.to),
+    dep: p.leg.dep, arr: p.leg.arr, dur: fmtDuration(p.arrAbs - p.depAbs)
+  }));
+  const connections = path.slice(1).map((p, i) => {
+    const prev = path[i];
+    const stay = prev.leg.num === p.leg.num;
+    return { at: airportLabel(p.leg.from), type: stay ? "stay" : "deplane", layover: fmtDuration(p.depAbs - prev.arrAbs) };
+  });
+  const totalMin = path[path.length - 1].arrAbs - path[0].depAbs;
+  return {
+    id: legs.map(l => l.num + "@" + l.dep).join("|"),
+    num: [...new Set(legs.map(l => l.num))].join(" / "),
+    legs, connections,
+    dep: legs[0].dep, arr: legs[legs.length - 1].arr,
+    totalMin, direct: legs.length === 1
+  };
+}
+
+// Itineraries from → to (airport labels as used in the Book selects), sorted by departure.
+function getItineraries(from, to) {
+  const direct = MOCK_FLIGHTS[from + "-" + to];
+  if (direct) {
+    return direct.map(f => ({
+      id: f.num + "@" + f.dep,
+      num: f.num,
+      legs: [{ num: f.num, from, to, dep: f.dep, arr: f.arr, dur: f.dur }],
+      connections: [],
+      dep: f.dep, arr: f.arr,
+      totalMin: (toMinutes(f.arr) - toMinutes(f.dep) + 1440) % 1440,
+      direct: true
+    }));
+  }
+
+  const origin = airportCodeOf(from);
+  const dest = airportCodeOf(to);
+  const legs = bookableLegs();
+  const found = [];
+  // Depth-first search, at most 2 plane changes (staying on a multi-stop run doesn't count), never revisiting an airport.
+  const extend = (path, visited, changes) => {
+    const last = path[path.length - 1];
+    if (last.leg.to === dest) {
+      found.push(path);
+      return;
+    }
+    if (path.length === 5) return;
+    legs.forEach(leg => {
+      if (leg.from !== last.leg.to || visited.has(leg.to)) return;
+      const stay = leg.num === last.leg.num;
+      if (!stay && changes === 2) return;
+      const minGround = stay ? 0 : MIN_LAYOVER;
+      let depAbs = toMinutes(leg.dep);
+      while (depAbs < last.arrAbs + minGround) depAbs += 1440;
+      if (depAbs - last.arrAbs > MAX_LAYOVER) return;
+      const arrAbs = depAbs + ((toMinutes(leg.arr) - toMinutes(leg.dep) + 1440) % 1440);
+      extend([...path, { leg, depAbs, arrAbs }], new Set([...visited, leg.to]), changes + (stay ? 0 : 1));
+    });
+  };
+  legs.filter(l => l.from === origin).forEach(leg => {
+    const depAbs = toMinutes(leg.dep);
+    const arrAbs = depAbs + ((toMinutes(leg.arr) - depAbs + 1440) % 1440);
+    extend([{ leg, depAbs, arrAbs }], new Set([origin, leg.to]), 0);
+  });
+
+  // Same times on the same route count once; fewer legs win.
+  const byKey = new Map();
+  found.map(itineraryFromLegs)
+    .sort((a, b) => a.legs.length - b.legs.length)
+    .forEach(it => {
+      const key = it.legs.map(l => `${l.from}-${l.to}-${l.dep}-${l.arr}`).join("|");
+      if (!byKey.has(key)) byKey.set(key, it);
+    });
+  const all = [...byKey.values()];
+  const depOf = it => toMinutes(it.dep);
+  const arrOf = it => depOf(it) + it.totalMin;
+  // Drop options another one beats: leaves no earlier and arrives no later (ties → fewer legs).
+  const better = (b, a) => depOf(b) >= depOf(a) && arrOf(b) <= arrOf(a) &&
+    (depOf(b) > depOf(a) || arrOf(b) < arrOf(a) || b.legs.length < a.legs.length);
+  return all
+    .filter(a => !all.some(b => b !== a && better(b, a)))
+    .sort((a, b) => depOf(a) - depOf(b) || a.totalMin - b.totalMin)
+    .slice(0, MAX_ITINERARIES);
+}
+
+function connectionNote(c) {
+  const city = AIRPORTS[airportCodeOf(c.at)] || c.at;
+  return c.type === "stay"
+    ? `Stay on plane in ${city} · ${c.layover}`
+    : `Deplane in ${city} · ${c.layover} layover`;
+}
+
+function stopsText(it) {
+  const n = it.connections.length;
+  return `Total ~${fmtDuration(it.totalMin)} · ${n} stop${n === 1 ? "" : "s"}`;
+}
+
+// Leg-by-leg breakdown shared by the Book cards and My Trips.
+function itineraryLegsHtml(legs, connections) {
+  return legs.map((l, i) => `
+    <div class="itin-leg">
+      <span class="itin-num">${l.num}</span>
+      ${l.from} ${l.dep} → ${l.to} ${l.arr}
+    </div>
+    ${connections[i] ? `<div class="itin-conn itin-${connections[i].type}">${connectionNote(connections[i])}</div>` : ""}
+  `).join("");
+}
+
 function renderBook(el) {
   selectedFlight = null;
   el.innerHTML = `
@@ -322,12 +502,16 @@ function updateFlightList() {
     return;
   }
 
-  const flights = getFlightsForRoute(from, to);
-  listEl.innerHTML = `
+  bookItineraries = getItineraries(from, to);
+  listEl.innerHTML = !bookItineraries.length
+    ? `<p style="color:var(--muted);">No mock itinerary for this pair yet.</p>`
+    : `
     <label style="font-weight:600; display:block; margin-bottom:0.5rem;">Available Flights</label>
-    ${flights.map((f, i) => `
-      <div class="card" style="padding:0.75rem; margin-bottom:0.5rem; cursor:pointer; border:2px solid transparent;" onclick="selectFlight(${i})" id="flight-${i}">
-        <strong>${f.num}</strong> &nbsp; ${f.dep} → ${f.arr} <span style="color:var(--muted);">(${f.dur})</span>
+    ${bookItineraries.map((it, i) => `
+      <div class="card itin-card" onclick="selectFlight(${i})" id="flight-${i}">
+        ${it.direct
+          ? `<strong>${it.num}</strong> &nbsp; ${it.dep} → ${it.arr} <span style="color:var(--muted);">(${it.legs[0].dur})</span> <span class="itin-tag">Nonstop</span>`
+          : `${itineraryLegsHtml(it.legs, it.connections)}<div class="itin-total">${stopsText(it)}</div>`}
       </div>
     `).join("")}
   `;
@@ -339,10 +523,8 @@ function updateFlightList() {
 }
 
 function selectFlight(index) {
-  const from = document.getElementById("from").value;
-  const to = document.getElementById("to").value;
-  const flights = getFlightsForRoute(from, to);
-  selectedFlight = flights[index];
+  selectedFlight = bookItineraries[index];
+  if (!selectedFlight) return;
 
   document.querySelectorAll("[id^='flight-']").forEach(el => {
     el.style.borderColor = "transparent";
@@ -361,13 +543,19 @@ function bookFlight() {
   const date = document.getElementById("date").value;
   const pax = document.getElementById("pax").value;
 
+  const it = selectedFlight;
+  // flightNum is the first leg so delays, manifests and the boarding pass key off the flight you board first.
   const trip = {
     id: Date.now().toString(),
     from, to, date, pax,
-    flightNum: selectedFlight.num,
-    depTime: selectedFlight.dep,
-    arrTime: selectedFlight.arr,
-    duration: selectedFlight.dur,
+    flightNum: it.legs[0].num,
+    itineraryNum: it.num,
+    depTime: it.dep,
+    arrTime: it.arr,
+    duration: it.direct ? it.legs[0].dur : fmtDuration(it.totalMin),
+    totalMin: it.totalMin,
+    legs: it.legs,
+    connections: it.connections,
     status: "Scheduled",
     checkedIn: false,
     boardingPass: null,
@@ -376,7 +564,7 @@ function bookFlight() {
   state.trips.push(trip);
   getManifestEntryForTrip(trip);
   saveData(state);
-  alert("Booked! " + trip.flightNum + " on " + date + " at " + trip.depTime);
+  alert("Booked! " + it.num + " on " + date + " at " + trip.depTime);
   goTo("trips");
 }
 
@@ -391,11 +579,16 @@ function renderTrips(el) {
     return `
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong>${t.flightNum}</strong>
+          <strong>${t.itineraryNum || t.flightNum}</strong>
           <span class="status-badge status-${delay.type}">${delay.type.replace("-"," ")}</span>
         </div>
         <p>${t.from} → ${t.to}</p>
         <p style="font-size:0.85rem; color:var(--muted);">${eff.date} • ${eff.time}–${t.arrTime || ""} • ${t.pax} pax</p>
+        ${Array.isArray(t.legs) && t.legs.length > 1 ? `
+          <div class="itin-trip">
+            ${itineraryLegsHtml(t.legs, t.connections || [])}
+            <div class="itin-total">Total ~${fmtDuration(t.totalMin)} · ${t.legs.length - 1} stop${t.legs.length === 2 ? "" : "s"}</div>
+          </div>` : ""}
         ${eff.changed ? `<p style="font-size:0.75rem; color:var(--muted);">Originally: ${t.date} ${t.depTime || ""}</p>` : ""}
         ${delay.message ? `<p style="color:var(--warning); font-size:0.85rem;">${delay.message}</p>` : ""}
         ${!t.checkedIn 
