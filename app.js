@@ -656,12 +656,20 @@ function showPass(id) {
     </div>
     <div class="note">Show this QR to the pilot or agent when boarding. In the real app this will be scannable by employees.</div>
   `;
-  if (typeof QRCode !== "undefined") {
-    QRCode.toCanvas(document.getElementById("qr"), trip.boardingPass, { width: 180 }, function (err) {
-      if (err) document.getElementById("qr").textContent = trip.boardingPass;
-    });
-  } else {
-    document.getElementById("qr").textContent = trip.boardingPass;
+  renderQrInto(document.getElementById("qr"), trip.boardingPass);
+}
+
+// Renders a scannable QR (black modules on white) for a boarding code using the vendored qrcode-generator lib.
+function renderQrInto(container, text) {
+  if (!container) return;
+  try {
+    if (typeof qrcode !== "function") throw new Error("QR library not loaded");
+    const qr = qrcode(0, "M");
+    qr.addData(text);
+    qr.make();
+    container.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 4, scalable: true, alt: "Boarding pass QR code for " + text });
+  } catch (e) {
+    container.innerHTML = `<p style="color:#111; font-weight:600;">${text}</p>`;
   }
 }
 
