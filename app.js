@@ -228,6 +228,11 @@ function loadData() {
   if (!BASES.includes(data.employeeBase)) data.employeeBase = "BET";
   if (!isPlainObject(data.runDelays)) data.runDelays = {};
   if (typeof data.checkinFlight !== "string") data.checkinFlight = null;
+  // Passenger Map choices: a stop served by some run, and a run that actually stops there.
+  const templateStops = t => [t.legs[0][0], ...t.legs.map(l => l[1])];
+  if (!RUN_TEMPLATES.some(t => templateStops(t).includes(data.paxMapLocation))) data.paxMapLocation = null;
+  const paxRun = RUN_TEMPLATES.find(t => t.id === data.paxMapRun);
+  if (!data.paxMapLocation || !paxRun || !templateStops(paxRun).includes(data.paxMapLocation)) data.paxMapRun = null;
   // The mock run day is anchored once per calendar day; a new day starts with fresh runs and no delays.
   const today = localDateISO(new Date());
   const anchor = data.runAnchor;
@@ -694,17 +699,71 @@ function renderQrInto(container, text) {
   }
 }
 
+// Every airport any of today's runs stops at: hubs in HUB_ORDER, then villages A-Z by name.
+function paxMapLocations() {
+  const served = new Set(RUNS.flatMap(runStops));
+  const hubs = HUB_ORDER.map(airportCodeOf).filter(c => served.has(c));
+  const villages = [...served].filter(c => !hubs.includes(c))
+    .sort((a, b) => (AIRPORTS[a] || a).localeCompare(AIRPORTS[b] || b));
+  return { hubs, villages };
+}
+
+function paxRunsFor(code) {
+  return RUNS.filter(r => runStops(r).includes(code))
+    .sort((a, b) => a.legs[0].depMin - b.legs[0].depMin || a.flightNum.localeCompare(b.flightNum));
+}
+
 function renderMap(el) {
+  const loc = state.paxMapLocation;
+  const runs = loc ? paxRunsFor(loc) : [];
+  if (runs.length && !runs.some(r => r.id === state.paxMapRun)) {
+    // Default to the next run that hasn't finished, so the passenger sees the plane they're waiting for.
+    state.paxMapRun = (runs.find(r => runStatus(r).status !== "Completed") || runs[0]).id;
+    saveData(state);
+  }
+  const { hubs, villages } = paxMapLocations();
+  const locOpts = codes => codes.map(c => `<option value="${c}"${c === loc ? " selected" : ""}>${airportLabel(c)}</option>`).join("");
   el.innerHTML = `
-    <h2>Live Map</h2>
+    <h2>Flight Map</h2>
     <div class="card">
-      <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0.5rem;">Approximate positions of Grant Aviation aircraft (OpenSky ADS-B).</p>
-      <div id="map" style="height:280px; background:var(--input-bg); border:1px solid var(--border); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted);">Loading map…</div>
-      <div id="flightList" style="margin-top:0.75rem;"></div>
-      <button class="btn btn-outline" onclick="loadMap()">Refresh</button>
+      <label>I am currently in</label>
+      <select onchange="setPaxMapLocation(this.value)">
+        <option value=""${loc ? "" : " selected"} disabled>Select your location</option>
+        <optgroup label="Hubs">${locOpts(hubs)}</optgroup>
+        <optgroup label="Villages">${locOpts(villages)}</optgroup>
+      </select>
+      ${!loc ? `<p style="font-size:0.85rem; color:var(--muted);">Choose where you are to see today's Grant flights stopping there.</p>` : !runs.length ? `
+        <p style="font-size:0.85rem; color:var(--muted);">No Grant flights stop at ${airportLabel(loc)} today. Call 888-359-4726 for upcoming service.</p>` : `
+        <label>Flight</label>
+        <select onchange="setPaxMapRun(this.value)">
+          ${runs.map(r => `<option value="${r.id}"${r.id === state.paxMapRun ? " selected" : ""}>${runOptionText(r)}</option>`).join("")}
+        </select>
+        <div id="paxMapSvg" class="run-map"></div>`}
     </div>
+    ${loc && runs.length ? `<div class="card"><div id="paxMapProgress"></div></div>` : ""}
+    ${livePlanesCardHtml()}
   `;
-  loadMap();
+  renderPaxMapProgress();
+}
+
+function setPaxMapLocation(code) {
+  state.paxMapLocation = paxRunsFor(code).length ? code : null;
+  state.paxMapRun = null;
+  saveData(state);
+  render();
+}
+
+function setPaxMapRun(id) {
+  if (!paxRunsFor(state.paxMapLocation).some(r => r.id === id)) return;
+  state.paxMapRun = id;
+  saveData(state);
+  renderPaxMapProgress();
+}
+
+function renderPaxMapProgress() {
+  const run = RUNS.find(r => r.id === state.paxMapRun);
+  if (!run || !state.paxMapLocation) return;
+  renderRunView(run, { map: "paxMapSvg", progress: "paxMapProgress" }, { highlight: state.paxMapLocation });
 }
 
 async function loadMap() {
@@ -1016,7 +1075,7 @@ function renderRunMap(el) {
     <div class="card">
       <label>Run</label>
       <select onchange="selectMapRun(this.value)">
-        ${runs.map(r => `<option value="${r.id}"${r.id === selectedMapRunId ? " selected" : ""}>${r.flightNum} · ${runStops(r).join("→")}</option>`).join("")}
+        ${runs.map(r => `<option value="${r.id}"${r.id === selectedMapRunId ? " selected" : ""}>${runOptionText(r)}</option>`).join("")}
       </select>
       ${fallback ? `<p style="font-size:0.8rem; color:var(--muted);">No runs touch ${base} today — showing all runs.</p>` : ""}
       <div id="runMapSvg" class="run-map"></div>
@@ -1024,12 +1083,23 @@ function renderRunMap(el) {
     <div class="card">
       <div id="runProgress"></div>
     </div>
+    ${livePlanesCardHtml()}
+  `;
+  renderRunProgress();
+}
+
+// "GV111 · ANC→ENA→ANC · 11:30" — first-leg departure (delay-adjusted) at the end, set off by en spaces.
+function runOptionText(run) {
+  const dep = adjustedLegs(run)[0].adjDep;
+  return `${run.flightNum} · ${runStops(run).join("→")} · ${fmtMin(dep)}`;
+}
+
+function livePlanesCardHtml() {
+  return `
     <div class="card">
       <h3>Live Grant Planes</h3>
       <div id="liveMapArea"><button class="btn btn-outline" onclick="showLivePlanes()">Show live OpenSky list</button></div>
-    </div>
-  `;
-  renderRunProgress();
+    </div>`;
 }
 
 function selectMapRun(id) {
@@ -1050,17 +1120,54 @@ function runPosition(legs, now) {
 }
 
 function renderRunProgress() {
-  const out = document.getElementById("runProgress");
   const run = RUNS.find(r => r.id === selectedMapRunId);
-  if (!out || !run) return;
+  if (run) renderRunView(run, { map: "runMapSvg", progress: "runProgress" });
+}
+
+// Shared by the employee Run Map and passenger Flight Map: SVG map into ids.map, info card into ids.progress.
+// opts.highlight: airport code to mark as "You are here", with passenger arrive/depart times in the card.
+function renderRunView(run, ids, opts = {}) {
+  const out = document.getElementById(ids.progress);
+  if (!out) return;
   const info = runStatus(run);
+  const pos = runMapState(info.legs, info.now);
+  const mapEl = document.getElementById(ids.map);
+  if (mapEl) mapEl.innerHTML = runMapSvgHtml(run, info, pos, opts);
+  out.innerHTML = runInfoHtml(run, info, pos, opts);
+}
+
+// "Arrives TOG ~10:05 · Departs TOG ~10:25" for each visit to the stop, plus whether the plane has been and gone.
+function paxStopHtml(run, info, code) {
+  const legs = info.legs;
+  const n = legs.length;
+  const events = [];
+  runStops(run).forEach((c, i) => {
+    if (c !== code) return;
+    if (i > 0) events.push({ verb: "Arrives", past: "Arrived", t: legs[i - 1].adjArr });
+    if (i < n) events.push({ verb: "Departs", past: "Departed", t: legs[i].adjDep });
+  });
+  const now = info.now;
+  const times = events.map(e => `${e.verb} ${code} ~${fmtMin(e.t)}`).join(" · ");
+  const next = events.find(e => e.t > now);
+  const prev = [...events].reverse().find(e => e.t <= now);
+  let note;
+  if (!next) note = `<span style="color:var(--muted);">✓ Already passed ${code} — ${prev.past.toLowerCase()} ~${fmtMin(prev.t)}</span>`;
+  else if (prev && prev.verb === "Arrives" && next.verb === "Departs") note = `<span style="color:var(--success); font-weight:600;">On the ground at ${code} now</span>`;
+  else note = `<span style="color:var(--accent); font-weight:600;">${next.verb === "Arrives" ? "Arriving" : "Departing"} in ${fmtDuration(Math.max(1, Math.round(next.t - now)))}</span>`;
+  const delayNote = info.delay > 0 && next ? ` <span style="color:var(--muted);">(includes +${info.delay} min delay)</span>` : "";
+  return `
+    <div style="margin-top:0.75rem; padding:0.6rem 0.75rem; border:1px solid var(--accent); border-radius:8px; font-size:0.85rem;">
+      <div style="font-weight:600;">${airportLabel(code)} · You are here</div>
+      <div style="font-variant-numeric:tabular-nums;">${times}</div>
+      <div>${note}${delayNote}</div>
+    </div>`;
+}
+
+function runInfoHtml(run, info, pos, opts) {
   const legs = info.legs;
   const stops = runStops(run);
   const pct = runPosition(legs, info.now) * 100;
   const n = legs.length;
-  const pos = runMapState(legs, info.now);
-  const mapEl = document.getElementById("runMapSvg");
-  if (mapEl) mapEl.innerHTML = runMapSvgHtml(run, info, pos);
   const leg = legs[pos.leg];
   const legText = l => `${l.from} → ${l.to}`;
   const stats = {
@@ -1074,17 +1181,19 @@ function renderRunProgress() {
     const arr = i > 0 ? legs[i - 1].adjArr : null;
     const dep = i < n ? legs[i].adjDep : null;
     const passed = i < n ? info.now >= dep : info.now >= arr;
+    const mine = code === opts.highlight;
     return `
       <div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:0.5rem;">
-        <span><span style="display:inline-block; width:1.2rem; color:var(--success); font-weight:700;">${passed ? "✓" : ""}</span>${airportLabel(code)}</span>
+        <span${mine ? ' style="font-weight:700;"' : ""}><span style="display:inline-block; width:1.2rem; color:var(--success); font-weight:700;">${passed ? "✓" : ""}</span>${airportLabel(code)}${mine ? ` <span style="color:var(--accent); font-size:0.75rem;">● You</span>` : ""}</span>
         <span style="color:var(--muted); text-align:right;">${arr !== null ? "arr " + fmtMin(arr) : ""}${arr !== null && dep !== null ? " · " : ""}${dep !== null ? "dep " + fmtMin(dep) : ""}</span>
       </div>`;
   }).join("");
-  out.innerHTML = `
+  return `
     <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
       <span style="font-size:0.85rem;"><strong>${run.flightNum}</strong> · ${run.aircraft}</span>
       <span>${statusBadges(info)}</span>
     </div>
+    ${opts.highlight ? paxStopHtml(run, info, opts.highlight) : ""}
     <div class="rm-stats">
       ${stats.map(([label, value, sub]) => `
         <div><span>${label}</span><b>${value}</b>${sub ? `<small>${sub}</small>` : ""}</div>`).join("")}
@@ -1106,6 +1215,7 @@ function renderRunProgress() {
 const RUN_MAP_W = 400;
 const RUN_MAP_H = 300;
 let runMapTimer = null;
+let runMapTimerKey = null; // "employee" | "passenger" — which map the running interval refreshes
 
 // Where the plane is: before departure, airborne on leg i (fraction t), on the ground waiting for leg i, or done.
 function runMapState(legs, now) {
@@ -1149,7 +1259,7 @@ function niceStep(span) {
   return [0.1, 0.25, 0.5, 1, 2, 5, 10].find(s => span / s <= 5) || 10;
 }
 
-function runMapSvgHtml(run, info, pos) {
+function runMapSvgHtml(run, info, pos, opts = {}) {
   const W = RUN_MAP_W, H = RUN_MAP_H;
   const legs = info.legs;
   const stops = runStops(run);
@@ -1219,15 +1329,21 @@ function runMapSvgHtml(run, info, pos) {
   const placed = [];
   const overlaps = r => placed.some(p => r.x < p.x + p.w && p.x < r.x + r.w && r.y < p.y + p.h && p.y < r.y + r.h);
   let stopsSvg = "";
-  [...byCode.values()].forEach(st => {
+  // The passenger's stop is placed first so it gets the best label spot; its label has a second "You are here" line.
+  const stopList = [...byCode.values()].sort((a, b) => (b.code === opts.highlight) - (a.code === opts.highlight));
+  stopList.forEach(st => {
+    const mine = st.code === opts.highlight;
     const text = `${st.code} ${st.times.join(" / ")}`;
-    const w = text.length * 5.8 + 4;
+    const w = Math.max(text.length, mine ? 12 : 0) * 5.8 + 4;
     const lx = Math.min(Math.max(st.pt[0], w / 2 + 4), W - w / 2 - 4);
-    const tries = [-11, 20, -25, 34].map(dy => ({ x: lx - w / 2, y: st.pt[1] + dy - 10, w, h: 13, dy }));
+    const tries = (mine ? [-26, 24, -40, 38] : [-11, 20, -25, 34]).map(dy => ({ x: lx - w / 2, y: st.pt[1] + dy - 10, w, h: mine ? 24 : 13, dy }));
     const spot = tries.find(r => r.y > 2 && r.y + r.h < H - 2 && !overlaps(r)) || tries[0];
     placed.push(spot);
-    stopsSvg += `<circle class="${st.passed ? "rm-stop-done" : "rm-stop"}" cx="${st.pt[0].toFixed(1)}" cy="${st.pt[1].toFixed(1)}" r="${st.code === stops[0] ? 6 : 5}"/>
-      <text class="rm-label" x="${lx.toFixed(1)}" y="${(st.pt[1] + spot.dy).toFixed(1)}" text-anchor="middle"><tspan class="rm-code">${st.code}</tspan> <tspan class="${st.delayed ? "rm-time-late" : "rm-time"}">${st.times.join(" / ")}</tspan></text>`;
+    const cxy = `cx="${st.pt[0].toFixed(1)}" cy="${st.pt[1].toFixed(1)}"`;
+    stopsSvg += `${mine ? `<circle class="rm-you-ring" ${cxy} r="11"/>` : ""}
+      <circle class="${st.passed ? "rm-stop-done" : "rm-stop"}" ${cxy} r="${mine ? 6.5 : st.code === stops[0] ? 6 : 5}"/>
+      <text class="rm-label" x="${lx.toFixed(1)}" y="${(st.pt[1] + spot.dy).toFixed(1)}" text-anchor="middle"><tspan class="rm-code">${st.code}</tspan> <tspan class="${st.delayed ? "rm-time-late" : "rm-time"}">${st.times.join(" / ")}</tspan></text>
+      ${mine ? `<text class="rm-label rm-you" x="${lx.toFixed(1)}" y="${(st.pt[1] + spot.dy + 11).toFixed(1)}" text-anchor="middle">YOU ARE HERE</text>` : ""}`;
   });
 
   // Plane: at the origin before departure, on the curve when airborne, at the stop on the ground.
@@ -1265,15 +1381,18 @@ function runMapSvgHtml(run, info, pos) {
     ${pos.phase === "done" ? `<div class="rm-banner">Completed</div>` : ""}`;
 }
 
-// Refresh the run map every 30s only while the employee Map tab is showing; called from render().
+// Refresh the route map every 30s only while the employee Run Map or passenger Map tab is showing; called from render().
+// One interval at a time; it is restarted whenever the active map view changes.
 function syncRunMapTimer() {
-  const active = state.employeeMode && currentPage === "runmap";
-  if (active && !runMapTimer) {
-    runMapTimer = setInterval(renderRunProgress, 30000);
-  } else if (!active && runMapTimer) {
+  const key = state.employeeMode ? (currentPage === "runmap" ? "employee" : null) : (currentPage === "map" ? "passenger" : null);
+  if (runMapTimer && runMapTimerKey !== key) {
     clearInterval(runMapTimer);
     runMapTimer = null;
   }
+  if (key && !runMapTimer) {
+    runMapTimer = setInterval(key === "employee" ? renderRunProgress : renderPaxMapProgress, 30000);
+  }
+  runMapTimerKey = runMapTimer ? key : null;
 }
 
 function showLivePlanes() {
