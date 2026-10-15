@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Grant Aviation Tracker</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0a2540">
+  <link rel="icon" href="logo.jpg">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <img src="logo.jpg" alt="Grant Aviation Logo" class="logo">
+    <h1>Grant Aviation</h1>
+    <p class="tagline">Serving remote Alaska communities since 1971</p>
+  </header>
+
+  <nav>
+    <button data-tab="tracker" class="active">Live Tracker</button>
+    <button data-tab="destinations">Destinations</button>
+    <button data-tab="info">Info & Contact</button>
+  </nav>
+
+  <main>
+    <section id="tracker" class="tab active">
+      <h2>Live Flight Tracking</h2>
+      <p class="note">No formal check-in. The plane lands and the pilot counts passengers. Use this to see when the plane is approaching your village.</p>
+      
+      <div class="controls">
+        <input type="text" id="flightSearch" placeholder="Flight # e.g. GV5505 or GUN5505" />
+        <button id="searchBtn">Track</button>
+        <button id="refreshBtn">Refresh Live Planes</button>
+      </div>
+      
+      <div id="statusMessage"></div>
+      <div id="map"></div>
+      <div id="flightsList"></div>
+    </section>
+
+    <section id="destinations" class="tab">
+      <h2>Destinations & Bases</h2>
+      <p>Grant Aviation serves communities throughout the Yukon-Kuskokwim Delta, the Aleutians, and Bristol Bay.</p>
+      <div id="destList"></div>
+    </section>
+
+    <section id="info" class="tab">
+      <h2>About & Contact</h2>
+      <p><strong>Phone:</strong> 888-Fly-Grant (888-359-4726)</p>
+      <p><strong>Email:</strong> res@flygrant.com</p>
+      <p><strong>Website:</strong> <a href="https://www.flygrant.com" target="_blank">flygrant.com</a></p>
+      <p>Bases: Anchorage, Bethel, Cold Bay, Dillingham, Dutch Harbor/Unalaska, Emmonak, Kenai, King Salmon.</p>
+      <p>Fleet: Cessna Caravans, Cessna 207s, Piper Navajos, GA8 Airvans, Beech King Airs.</p>
+      <p>Quyana Rewards loyalty program available.</p>
+      <p class="note">This is an unofficial community tracker for remote village users. Always confirm with Grant Aviation agents for official schedules and status.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Unofficial tracker • Data from OpenSky Network (ADS-B) • Not affiliated with Grant Aviation</p>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "Grant Aviation Tracker",
+  "short_name": "Grant Tracker",
+  "description": "Unofficial live flight tracker for Grant Aviation remote Alaska villages",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0a2540",
+  "theme_color": "#0a2540",
+  "icons": [
+    {
+      "src": "logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
