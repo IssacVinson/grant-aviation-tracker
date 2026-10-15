@@ -253,7 +253,7 @@ function renderHome(el) {
     <p style="color:var(--muted); margin-bottom:1rem;">Serving remote Alaska communities since 1971. No formal check-in in the villages — just show up when the plane is close.</p>
     <div class="card">
       <h3>Quick Book</h3>
-      <p style="font-size:0.9rem; color:var(--muted);">Anchorage ↔ Kenai and 100+ villages</p>
+      <p style="font-size:0.9rem; color:var(--muted);">Anchorage ↔ Kenai and dozens of villages across the Yukon-Kuskokwim Delta, Bristol Bay, and the Aleutians</p>
       <button class="btn" onclick="goTo('book')">Book a Flight</button>
     </div>
     <div class="card">
@@ -491,7 +491,7 @@ function renderProfile(el) {
     </div>
     <div class="card">
       <h3>About</h3>
-      <p style="font-size:0.9rem;">Unofficial prototype for Grant Aviation. Destinations include Bethel hubs, Kenai, Dillingham, Dutch Harbor, Cold Bay, and dozens of villages.</p>
+      <p style="font-size:0.9rem;">Unofficial prototype for Grant Aviation. Destinations include Bethel hubs, Kenai, Dillingham, Dutch Harbor, Cold Bay, and dozens of villages across the Yukon-Kuskokwim Delta, Bristol Bay, and the Aleutians.</p>
       <p style="font-size:0.85rem; margin-top:0.5rem;">Phone: 888-359-4726</p>
     </div>
   `;
