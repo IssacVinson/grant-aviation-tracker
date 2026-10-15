@@ -203,6 +203,7 @@ function renderTrips(el) {
   }
   el.innerHTML = `<h2>My Trips</h2>` + state.trips.map(t => {
     const delay = state.delays[t.flightNum] || { type: "on-time", message: "" };
+    const eff = getEffectiveDep(t);
     return `
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -210,7 +211,8 @@ function renderTrips(el) {
           <span class="status-badge status-${delay.type}">${delay.type.replace("-"," ")}</span>
         </div>
         <p>${t.from} → ${t.to}</p>
-        <p style="font-size:0.85rem; color:var(--muted);">${t.date} • ${t.depTime || ""}–${t.arrTime || ""} • ${t.pax} pax</p>
+        <p style="font-size:0.85rem; color:var(--muted);">${eff.date} • ${eff.time}–${t.arrTime || ""} • ${t.pax} pax</p>
+        ${eff.changed ? `<p style="font-size:0.75rem; color:var(--muted);">Originally: ${t.date} ${t.depTime || ""}</p>` : ""}
         ${delay.message ? `<p style="color:var(--warning); font-size:0.85rem;">${delay.message}</p>` : ""}
         ${!t.checkedIn 
           ? `<button class="btn" onclick="checkIn('${t.id}')">Check In</button>` 
@@ -232,13 +234,14 @@ function checkIn(id) {
 function showPass(id) {
   const trip = state.trips.find(t => t.id === id);
   if (!trip || !trip.boardingPass) return;
+  const eff = getEffectiveDep(trip);
   const el = document.getElementById("content");
   el.innerHTML = `
     <h2>Boarding Pass</h2>
     <div class="card">
       <h3>${trip.flightNum}</h3>
       <p>${trip.from} → ${trip.to}</p>
-      <p>${trip.date} • ${trip.depTime || ""}</p>
+      <p>${eff.date} • ${eff.time}</p>
       <p><strong>${trip.passengerName}</strong></p>
       <div class="qr-container" id="qr"></div>
       <p style="text-align:center; font-size:0.8rem; color:var(--muted);">${trip.boardingPass}</p>
@@ -301,7 +304,15 @@ function renderProfile(el) {
       <h2>Employee Tools</h2>
       <div class="card">
         <h3>Post Delay / Weather Hold</h3>
-        <input id="flightNum" placeholder="Flight # e.g. GV5505">
+        <select id="flightNum" onchange="updateCurrentDep()">
+          <option value="">Select a flight</option>
+          ${getKnownFlights().map(f => `<option value="${f.num}">${flightOptionText(f)}</option>`).join("")}
+        </select>
+        <p id="currentDep" style="font-size:0.85rem; color:var(--muted);"></p>
+        <label>New Departure Time</label>
+        <input type="time" id="newDepTime">
+        <label>New Date (for next-day delays)</label>
+        <input type="date" id="newDepDate">
         <select id="delayType">
           <option value="on-time">On Time</option>
           <option value="delayed">Delayed</option>
@@ -340,14 +351,69 @@ function toggleRole() {
   render();
 }
 
+// All flights an employee can post updates for: mock schedule plus booked trips, unique by flight number.
+function getKnownFlights() {
+  const byNum = new Map();
+  Object.keys(MOCK_FLIGHTS).forEach(key => {
+    const route = key === "default" ? "Other routes" : key.split("-").join(" → ");
+    MOCK_FLIGHTS[key].forEach(f => {
+      if (!byNum.has(f.num)) byNum.set(f.num, { num: f.num, route, dep: f.dep });
+    });
+  });
+  state.trips.forEach(t => {
+    if (!t.flightNum || byNum.has(t.flightNum)) return;
+    byNum.set(t.flightNum, { num: t.flightNum, route: `${t.from} → ${t.to}`, dep: t.depTime || "" });
+  });
+  return [...byNum.values()];
+}
+
+function flightOptionText(f) {
+  const delay = state.delays[f.num];
+  let text = `${f.num} · ${f.route} · dep ${f.dep}`;
+  if (delay && (delay.newDepTime || delay.newDepDate)) {
+    text += ` · now ${[delay.newDepDate, delay.newDepTime].filter(Boolean).join(" ")}`;
+  }
+  return text;
+}
+
+function updateCurrentDep() {
+  const num = document.getElementById("flightNum").value;
+  const out = document.getElementById("currentDep");
+  const f = getKnownFlights().find(k => k.num === num);
+  if (!f) {
+    out.textContent = "";
+    return;
+  }
+  const delay = state.delays[num];
+  let text = "Scheduled departure: " + f.dep;
+  if (delay && (delay.newDepTime || delay.newDepDate)) {
+    text += " · Posted new departure: " + [delay.newDepDate, delay.newDepTime].filter(Boolean).join(" ");
+  }
+  out.textContent = text;
+}
+
+// Effective departure for a trip, applying any posted new time/date.
+function getEffectiveDep(trip) {
+  const delay = state.delays[trip.flightNum];
+  const changed = !!(delay && (delay.newDepTime || delay.newDepDate));
+  return {
+    date: (changed && delay.newDepDate) || trip.date,
+    time: (changed && delay.newDepTime) || trip.depTime || "",
+    changed
+  };
+}
+
 function postDelay() {
-  const num = document.getElementById("flightNum").value.trim().toUpperCase();
+  const num = document.getElementById("flightNum").value;
   const type = document.getElementById("delayType").value;
   const msg = document.getElementById("delayMsg").value;
-  if (!num) return alert("Enter a flight number");
-  state.delays[num] = { type, message: msg };
+  const newDepTime = document.getElementById("newDepTime").value || null;
+  const newDepDate = document.getElementById("newDepDate").value || null;
+  if (!num) return alert("Select a flight");
+  state.delays[num] = { type, message: msg, newDepTime, newDepDate };
   saveData(state);
   alert("Update posted for " + num);
+  render();
 }
 
 function scanPass() {
