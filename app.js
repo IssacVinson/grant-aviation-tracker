@@ -514,7 +514,7 @@ function renderTools(el) {
         </select>
         <p id="currentDep" style="font-size:0.85rem; color:var(--muted);"></p>
         <label>New Departure Time</label>
-        <input type="time" id="newDepTime">
+        <input type="text" id="newDepTime" placeholder="HH:MM (24-hour, e.g. 13:40)" inputmode="numeric" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]">
         <label>New Date (for next-day delays)</label>
         <input type="date" id="newDepDate">
         <select id="delayType">
@@ -925,7 +925,13 @@ function postDelay() {
   const num = document.getElementById("delayFlightSelect").value;
   const type = document.getElementById("delayType").value;
   const msg = document.getElementById("delayMsg").value;
-  const newDepTime = document.getElementById("newDepTime").value || null;
+  let newDepTime = document.getElementById("newDepTime").value.trim() || null;
+  if (newDepTime) {
+    // Accept 1340 or 13:40; always store 24-hour HH:MM.
+    const m = newDepTime.match(/^([01]?\d|2[0-3]):?([0-5]\d)$/);
+    if (!m) return alert("Enter the new departure time in 24-hour format, e.g. 09:00 or 13:40");
+    newDepTime = m[1].padStart(2, "0") + ":" + m[2];
+  }
   const newDepDate = document.getElementById("newDepDate").value || null;
   if (!num) return alert("Select a flight");
   state.delays[num] = { type, message: msg, newDepTime, newDepDate };
