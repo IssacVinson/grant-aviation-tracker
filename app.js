@@ -26,8 +26,9 @@ const BOOK_AIRPORTS = (() => {
   return [...hubs, ...villages];
 })();
 
-function airportOptions(selected) {
-  return BOOK_AIRPORTS.map(a => `<option value="${a}"${a === selected ? " selected" : ""}>${a}</option>`).join("");
+function airportOptions(selected, placeholder) {
+  const ph = placeholder ? `<option value="" disabled${selected ? "" : " selected"}>${placeholder}</option>` : "";
+  return ph + BOOK_AIRPORTS.map(a => `<option value="${a}"${a === selected ? " selected" : ""}>${a}</option>`).join("");
 }
 
 // Mock daily flights by route (times in 24h local). Real schedules vary by day/season.
@@ -473,9 +474,9 @@ function renderBook(el) {
     <h2>Book a Flight</h2>
     <div class="card">
       <label>From</label>
-      <select id="from" onchange="updateFlightList()">${airportOptions(ROUTES[0].from)}</select>
+      <select id="from" onchange="updateFlightList()">${airportOptions("", "Select departure")}</select>
       <label>To</label>
-      <select id="to" onchange="updateFlightList()">${airportOptions(ROUTES[0].to)}</select>
+      <select id="to" onchange="updateFlightList()">${airportOptions("", "Select destination")}</select>
       <label>Date</label>
       <input type="date" id="date" value="${new Date().toISOString().split("T")[0]}" onchange="updateFlightList()">
       <label>Passengers</label>
@@ -495,7 +496,13 @@ function updateFlightList() {
   const to = document.getElementById("to")?.value;
   const listEl = document.getElementById("flightList");
   const btn = document.getElementById("confirmBtn");
-  if (!from || !to || !listEl) return;
+  if (!listEl) return;
+  if (!from || !to) {
+    listEl.innerHTML = `<p style="color:var(--muted);">Choose a departure and destination to see available flights.</p>`;
+    selectedFlight = null;
+    if (btn) { btn.disabled = true; btn.textContent = "Select a flight first"; }
+    return;
+  }
 
   if (from === to) {
     listEl.innerHTML = `<p style="color:var(--muted);">Choose a different destination.</p>`;
