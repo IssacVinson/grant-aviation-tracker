@@ -58,11 +58,53 @@ const MOCK_FLIGHTS = {
   ]
 };
 
+// Obviously fake passengers for demo manifests. Phones use the fictional 555-01xx range only.
+const FAKE_PASSENGERS = [
+  { name: "Testy McTesterson", phone: "(907) 555-0101" },
+  { name: "Jane Placeholder", phone: "(907) 555-0102" },
+  { name: "John Sampleton", phone: "(907) 555-0103" },
+  { name: "Polly Prototype", phone: "(907) 555-0104" },
+  { name: "Mocky Mockwell", phone: "(907) 555-0105" },
+  { name: "Fiona Fakename", phone: "(907) 555-0106" },
+  { name: "Demo Dan", phone: "(907) 555-0107" },
+  { name: "Dummy Dorothy", phone: "(907) 555-0108" },
+  { name: "Lorem Ipsum", phone: "(907) 555-0109" },
+  { name: "Stubby Stubbins", phone: "(907) 555-0110" },
+  { name: "Example Ellie", phone: "(907) 555-0111" },
+  { name: "Notreal Ned", phone: "(907) 555-0112" }
+];
+
+// Seed manifests: flight number → passenger indices into FAKE_PASSENGERS and how many are checked in.
+const SEED_MANIFESTS = {
+  GV5555: { indices: [0, 1, 2, 3, 4, 5, 6, 7], checkedIn: 4 },
+  GV2905: { indices: [8, 9, 10, 11, 0], checkedIn: 2 }
+};
+
 const STORAGE_KEY = "grant-aviation-data";
 
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  return raw ? JSON.parse(raw) : { trips: [], employeeMode: false, delays: {} };
+  const data = raw ? JSON.parse(raw) : { employeeMode: false };
+  if (!Array.isArray(data.trips)) data.trips = [];
+  if (!data.delays || typeof data.delays !== "object") data.delays = {};
+  if (!data.flightManifests || typeof data.flightManifests !== "object") data.flightManifests = {};
+  // Add seed manifests for existing users too, without touching manifests that already exist.
+  Object.keys(SEED_MANIFESTS).forEach(num => {
+    if (data.flightManifests[num]) return;
+    const seed = SEED_MANIFESTS[num];
+    data.flightManifests[num] = seed.indices.map((p, i) => {
+      const checkedIn = i < seed.checkedIn;
+      return {
+        name: FAKE_PASSENGERS[p].name,
+        phone: FAKE_PASSENGERS[p].phone,
+        checkedIn,
+        boardingPass: `GRANT-${num}-S${String(i + 1).padStart(2, "0")}`, // every seeded passenger has a pass so scanning can check them in
+        tripId: null
+      };
+    });
+  });
+  saveData(data);
+  return data;
 }
 
 function saveData(data) {
@@ -191,6 +233,7 @@ function bookFlight() {
     passengerName: "Passenger " + Math.floor(Math.random()*100)
   };
   state.trips.push(trip);
+  getManifestEntryForTrip(trip);
   saveData(state);
   alert("Booked! " + trip.flightNum + " on " + date + " at " + trip.depTime);
   goTo("trips");
@@ -227,8 +270,28 @@ function checkIn(id) {
   if (!trip) return;
   trip.checkedIn = true;
   trip.boardingPass = "GRANT-" + trip.flightNum + "-" + trip.id.slice(-4);
+  const entry = getManifestEntryForTrip(trip);
+  entry.checkedIn = true;
+  entry.boardingPass = trip.boardingPass;
   saveData(state);
   showPass(id);
+}
+
+// Find the manifest entry for a booked trip, adding one if missing (e.g. trips booked before manifests existed).
+function getManifestEntryForTrip(trip) {
+  const list = state.flightManifests[trip.flightNum] || (state.flightManifests[trip.flightNum] = []);
+  let entry = list.find(p => p.tripId === trip.id);
+  if (!entry) {
+    entry = {
+      name: trip.passengerName,
+      phone: "(907) 555-01" + String(Math.floor(Math.random() * 100)).padStart(2, "0"),
+      checkedIn: !!trip.checkedIn,
+      boardingPass: trip.boardingPass || null,
+      tripId: trip.id
+    };
+    list.push(entry);
+  }
+  return entry;
 }
 
 function showPass(id) {
@@ -303,8 +366,15 @@ function renderProfile(el) {
     el.innerHTML = `
       <h2>Employee Tools</h2>
       <div class="card">
+        <h3>Flight Status</h3>
+        <select id="statusFlightSelect" onchange="renderFlightStatus()">
+          ${getStatusFlights().map(f => `<option value="${f.num}"${f.num === "GV5555" ? " selected" : ""}>${flightOptionText(f)}</option>`).join("")}
+        </select>
+        <div id="flightStatus"></div>
+      </div>
+      <div class="card">
         <h3>Post Delay / Weather Hold</h3>
-        <select id="flightNum" onchange="updateCurrentDep()">
+        <select id="delayFlightSelect" onchange="updateCurrentDep()">
           <option value="">Select a flight</option>
           ${getKnownFlights().map(f => `<option value="${f.num}">${flightOptionText(f)}</option>`).join("")}
         </select>
@@ -329,6 +399,7 @@ function renderProfile(el) {
       </div>
       <button class="btn btn-outline" onclick="toggleRole()">Switch to Passenger</button>
     `;
+    renderFlightStatus();
   } else {
     el.innerHTML = `
       <h2>Profile</h2>
@@ -367,6 +438,38 @@ function getKnownFlights() {
   return [...byNum.values()];
 }
 
+// Known flights plus any flight that has a manifest, unique by flight number.
+function getStatusFlights() {
+  const flights = getKnownFlights();
+  const nums = new Set(flights.map(f => f.num));
+  Object.keys(state.flightManifests).forEach(num => {
+    if (!nums.has(num)) flights.push({ num, route: "Manifest only", dep: "" });
+  });
+  return flights;
+}
+
+function renderFlightStatus() {
+  const select = document.getElementById("statusFlightSelect");
+  const out = document.getElementById("flightStatus");
+  if (!select || !out) return;
+  const manifest = state.flightManifests[select.value] || [];
+  if (!manifest.length) {
+    out.innerHTML = `<p style="font-size:0.85rem; color:var(--muted);">No passengers on the manifest for this flight.</p>`;
+    return;
+  }
+  const notIn = manifest.filter(p => !p.checkedIn);
+  out.innerHTML = `
+    <p style="margin-top:0.5rem;"><b>${manifest.length - notIn.length}/${manifest.length} passengers checked in</b></p>
+    ${notIn.length
+      ? `<p style="font-size:0.85rem; color:var(--muted);">Not checked in:</p>` + notIn.map(p => `
+        <div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
+          <span>${p.name}</span>
+          <a href="tel:${p.phone.replace(/[^\d+]/g, "")}">${p.phone}</a>
+        </div>`).join("")
+      : `<p style="font-size:0.85rem; color:var(--success);">All passengers checked in.</p>`}
+  `;
+}
+
 function flightOptionText(f) {
   const delay = state.delays[f.num];
   let text = `${f.num} · ${f.route} · dep ${f.dep}`;
@@ -377,7 +480,7 @@ function flightOptionText(f) {
 }
 
 function updateCurrentDep() {
-  const num = document.getElementById("flightNum").value;
+  const num = document.getElementById("delayFlightSelect").value;
   const out = document.getElementById("currentDep");
   const f = getKnownFlights().find(k => k.num === num);
   if (!f) {
@@ -404,7 +507,7 @@ function getEffectiveDep(trip) {
 }
 
 function postDelay() {
-  const num = document.getElementById("flightNum").value;
+  const num = document.getElementById("delayFlightSelect").value;
   const type = document.getElementById("delayType").value;
   const msg = document.getElementById("delayMsg").value;
   const newDepTime = document.getElementById("newDepTime").value || null;
@@ -418,10 +521,35 @@ function postDelay() {
 
 function scanPass() {
   const code = document.getElementById("scanCode").value.trim();
-  const trip = state.trips.find(t => t.boardingPass === code);
   const res = document.getElementById("scanResult");
-  if (trip) {
-    res.innerHTML = `<p style="color:var(--success); margin-top:0.5rem;">✓ Valid for ${trip.flightNum} — ${trip.passengerName}</p>`;
+  let trip = code ? state.trips.find(t => t.boardingPass === code) : null;
+  let flightNum = trip ? trip.flightNum : null;
+  let entry = null;
+  if (code) {
+    for (const num of Object.keys(state.flightManifests)) {
+      entry = state.flightManifests[num].find(p => p.boardingPass === code || (trip && p.tripId === trip.id));
+      if (entry) {
+        flightNum = num;
+        break;
+      }
+    }
+  }
+  if (!trip && entry && entry.tripId) trip = state.trips.find(t => t.id === entry.tripId) || null;
+  if (trip && !entry) entry = getManifestEntryForTrip(trip);
+
+  if (trip || entry) {
+    if (entry) {
+      entry.checkedIn = true;
+      entry.boardingPass = code;
+    }
+    if (trip) {
+      trip.checkedIn = true;
+      trip.boardingPass = code;
+    }
+    saveData(state);
+    const name = trip ? trip.passengerName : entry.name;
+    res.innerHTML = `<p style="color:var(--success); margin-top:0.5rem;">✓ Valid for ${flightNum} — ${name} (checked in)</p>`;
+    if (document.getElementById("statusFlightSelect")?.value === flightNum) renderFlightStatus();
   } else {
     res.innerHTML = `<p style="color:var(--crimson); margin-top:0.5rem;">✗ Not found or not checked in</p>`;
   }
