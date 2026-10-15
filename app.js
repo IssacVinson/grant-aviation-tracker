@@ -16,6 +16,20 @@ const ROUTES = [
   { from: "Emmonak (EMK)", to: "Kotlik (KOT)" }
 ];
 
+// Unique airport list for From/To selects: hubs first, then villages A–Z.
+const HUB_ORDER = ["Anchorage (ANC)", "Kenai (ENA)", "Bethel (BET)", "Dillingham (DLG)", "King Salmon (AKN)", "Dutch Harbor (DUT)", "Cold Bay (CDB)", "Emmonak (EMK)"];
+const BOOK_AIRPORTS = (() => {
+  const all = new Set();
+  ROUTES.forEach(r => { all.add(r.from); all.add(r.to); });
+  const hubs = HUB_ORDER.filter(a => all.has(a));
+  const villages = [...all].filter(a => !HUB_ORDER.includes(a)).sort();
+  return [...hubs, ...villages];
+})();
+
+function airportOptions(selected) {
+  return BOOK_AIRPORTS.map(a => `<option value="${a}"${a === selected ? " selected" : ""}>${a}</option>`).join("");
+}
+
 // Mock daily flights by route (times in 24h local). Real schedules vary by day/season.
 const MOCK_FLIGHTS = {
   "Anchorage (ANC)-Kenai (ENA)": [
@@ -277,9 +291,9 @@ function renderBook(el) {
     <h2>Book a Flight</h2>
     <div class="card">
       <label>From</label>
-      <select id="from" onchange="updateFlightList()">${ROUTES.map(r => `<option>${r.from}</option>`).join("")}</select>
+      <select id="from" onchange="updateFlightList()">${airportOptions(ROUTES[0].from)}</select>
       <label>To</label>
-      <select id="to" onchange="updateFlightList()">${ROUTES.map(r => `<option>${r.to}</option>`).join("")}</select>
+      <select id="to" onchange="updateFlightList()">${airportOptions(ROUTES[0].to)}</select>
       <label>Date</label>
       <input type="date" id="date" value="${new Date().toISOString().split("T")[0]}" onchange="updateFlightList()">
       <label>Passengers</label>
@@ -300,6 +314,13 @@ function updateFlightList() {
   const listEl = document.getElementById("flightList");
   const btn = document.getElementById("confirmBtn");
   if (!from || !to || !listEl) return;
+
+  if (from === to) {
+    listEl.innerHTML = `<p style="color:var(--muted);">Choose a different destination.</p>`;
+    selectedFlight = null;
+    if (btn) { btn.disabled = true; btn.textContent = "Select a flight first"; }
+    return;
+  }
 
   const flights = getFlightsForRoute(from, to);
   listEl.innerHTML = `
