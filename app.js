@@ -3,17 +3,60 @@
 // Live map via OpenSky. Later wrap in Capacitor/React Native for real mobile app.
 
 const ROUTES = [
-  { from: "Anchorage (ANC)", to: "Kenai (ENA)", flight: "GV55xx" },
-  { from: "Bethel (BET)", to: "Chevak (VAK)", flight: "GV29xx" },
-  { from: "Bethel (BET)", to: "Hooper Bay (HPB)", flight: "GV29xx" },
-  { from: "Bethel (BET)", to: "Emmonak (EMK)", flight: "GV16xx" },
-  { from: "Bethel (BET)", to: "Kipnuk (KPN)", flight: "GV24xx" },
-  { from: "Dillingham (DLG)", to: "Togiak (TOG)", flight: "GV44xx" },
-  { from: "King Salmon (AKN)", to: "Dillingham (DLG)", flight: "GV37xx" },
-  { from: "Dutch Harbor (DUT)", to: "Atka (AKB)", flight: "GV81xx" },
-  { from: "Cold Bay (CDB)", to: "King Cove (KVC)", flight: "GV71xx" },
-  { from: "Emmonak (EMK)", to: "Kotlik (KOT)", flight: "GV12xx" }
+  { from: "Anchorage (ANC)", to: "Kenai (ENA)" },
+  { from: "Kenai (ENA)", to: "Anchorage (ANC)" },
+  { from: "Bethel (BET)", to: "Chevak (VAK)" },
+  { from: "Bethel (BET)", to: "Hooper Bay (HPB)" },
+  { from: "Bethel (BET)", to: "Emmonak (EMK)" },
+  { from: "Bethel (BET)", to: "Kipnuk (KPN)" },
+  { from: "Dillingham (DLG)", to: "Togiak (TOG)" },
+  { from: "King Salmon (AKN)", to: "Dillingham (DLG)" },
+  { from: "Dutch Harbor (DUT)", to: "Atka (AKB)" },
+  { from: "Cold Bay (CDB)", to: "King Cove (KVC)" },
+  { from: "Emmonak (EMK)", to: "Kotlik (KOT)" }
 ];
+
+// Mock daily flights by route (times in 24h local). Real schedules vary by day/season.
+const MOCK_FLIGHTS = {
+  "Anchorage (ANC)-Kenai (ENA)": [
+    { num: "GV5515", dep: "05:00", arr: "05:35", dur: "35m" },
+    { num: "GV5525", dep: "05:30", arr: "06:05", dur: "35m" },
+    { num: "GV5535", dep: "06:00", arr: "06:35", dur: "35m" },
+    { num: "GV5555", dep: "07:00", arr: "07:35", dur: "35m" },
+    { num: "GV5565", dep: "07:30", arr: "08:05", dur: "35m" },
+    { num: "GV5575", dep: "08:00", arr: "08:35", dur: "35m" },
+    { num: "GV5595", dep: "09:00", arr: "09:35", dur: "35m" },
+    { num: "GV5615", dep: "10:00", arr: "10:35", dur: "35m" },
+    { num: "GV5635", dep: "11:00", arr: "11:35", dur: "35m" },
+    { num: "GV5675", dep: "13:00", arr: "13:35", dur: "35m" },
+    { num: "GV5695", dep: "14:00", arr: "14:35", dur: "35m" }
+  ],
+  "Kenai (ENA)-Anchorage (ANC)": [
+    { num: "GV6005", dep: "06:00", arr: "06:35", dur: "35m" },
+    { num: "GV6025", dep: "07:00", arr: "07:35", dur: "35m" },
+    { num: "GV6045", dep: "08:00", arr: "08:35", dur: "35m" },
+    { num: "GV6065", dep: "09:30", arr: "10:05", dur: "35m" },
+    { num: "GV6085", dep: "11:00", arr: "11:35", dur: "35m" },
+    { num: "GV6105", dep: "13:00", arr: "13:35", dur: "35m" },
+    { num: "GV6125", dep: "15:00", arr: "15:35", dur: "35m" },
+    { num: "GV6145", dep: "17:00", arr: "17:35", dur: "35m" }
+  ],
+  "Bethel (BET)-Chevak (VAK)": [
+    { num: "GV2905", dep: "08:30", arr: "09:15", dur: "45m" },
+    { num: "GV2910", dep: "11:00", arr: "11:45", dur: "45m" },
+    { num: "GV2920", dep: "14:30", arr: "15:15", dur: "45m" }
+  ],
+  "Bethel (BET)-Emmonak (EMK)": [
+    { num: "GV1610", dep: "09:30", arr: "10:45", dur: "1h15m" },
+    { num: "GV1630", dep: "12:45", arr: "13:45", dur: "1h" },
+    { num: "GV1650", dep: "16:15", arr: "17:15", dur: "1h" }
+  ],
+  "default": [
+    { num: "GV2010", dep: "09:00", arr: "09:40", dur: "40m" },
+    { num: "GV2030", dep: "12:00", arr: "12:40", dur: "40m" },
+    { num: "GV2050", dep: "15:30", arr: "16:10", dur: "40m" }
+  ]
+};
 
 const STORAGE_KEY = "grant-aviation-data";
 
@@ -27,6 +70,7 @@ function saveData(data) {
 }
 
 let state = loadData();
+let selectedFlight = null;
 
 function render() {
   const page = document.querySelector(".bottom-nav button.active")?.dataset.page || "home";
@@ -60,33 +104,87 @@ function renderHome(el) {
   `;
 }
 
+function getFlightsForRoute(from, to) {
+  const key = from + "-" + to;
+  return MOCK_FLIGHTS[key] || MOCK_FLIGHTS["default"];
+}
+
 function renderBook(el) {
+  selectedFlight = null;
   el.innerHTML = `
     <h2>Book a Flight</h2>
     <div class="card">
       <label>From</label>
-      <select id="from">${ROUTES.map(r => `<option>${r.from}</option>`).join("")}</select>
+      <select id="from" onchange="updateFlightList()">${ROUTES.map(r => `<option>${r.from}</option>`).join("")}</select>
       <label>To</label>
-      <select id="to">${ROUTES.map(r => `<option>${r.to}</option>`).join("")}</select>
+      <select id="to" onchange="updateFlightList()">${ROUTES.map(r => `<option>${r.to}</option>`).join("")}</select>
       <label>Date</label>
-      <input type="date" id="date" value="${new Date().toISOString().split("T")[0]}">
+      <input type="date" id="date" value="${new Date().toISOString().split("T")[0]}" onchange="updateFlightList()">
       <label>Passengers</label>
       <input type="number" id="pax" value="1" min="1" max="9">
-      <button class="btn" onclick="bookFlight()">Confirm Booking</button>
+      
+      <div id="flightList" style="margin-top:1rem;"></div>
+      
+      <button class="btn" id="confirmBtn" onclick="bookFlight()" disabled>Select a flight first</button>
     </div>
-    <p style="font-size:0.8rem; color:var(--muted);">Prototype booking — creates a local trip you can check in for. Real booking will connect to Grant's system later.</p>
+    <p style="font-size:0.8rem; color:var(--muted);">Prototype booking — mock schedules only. No real booking while we are testing.</p>
   `;
+  updateFlightList();
+}
+
+function updateFlightList() {
+  const from = document.getElementById("from")?.value;
+  const to = document.getElementById("to")?.value;
+  const listEl = document.getElementById("flightList");
+  const btn = document.getElementById("confirmBtn");
+  if (!from || !to || !listEl) return;
+
+  const flights = getFlightsForRoute(from, to);
+  listEl.innerHTML = `
+    <label style="font-weight:600; display:block; margin-bottom:0.5rem;">Available Flights</label>
+    ${flights.map((f, i) => `
+      <div class="card" style="padding:0.75rem; margin-bottom:0.5rem; cursor:pointer; border:2px solid transparent;" onclick="selectFlight(${i})" id="flight-${i}">
+        <strong>${f.num}</strong> &nbsp; ${f.dep} → ${f.arr} <span style="color:var(--muted);">(${f.dur})</span>
+      </div>
+    `).join("")}
+  `;
+  selectedFlight = null;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Select a flight first";
+  }
+}
+
+function selectFlight(index) {
+  const from = document.getElementById("from").value;
+  const to = document.getElementById("to").value;
+  const flights = getFlightsForRoute(from, to);
+  selectedFlight = flights[index];
+
+  document.querySelectorAll("[id^='flight-']").forEach(el => {
+    el.style.borderColor = "transparent";
+  });
+  document.getElementById("flight-" + index).style.borderColor = "var(--navy)";
+
+  const btn = document.getElementById("confirmBtn");
+  btn.disabled = false;
+  btn.textContent = "Confirm Booking — " + selectedFlight.num;
 }
 
 function bookFlight() {
+  if (!selectedFlight) return alert("Please select a flight");
   const from = document.getElementById("from").value;
   const to = document.getElementById("to").value;
   const date = document.getElementById("date").value;
   const pax = document.getElementById("pax").value;
-  const flightNum = "GV" + Math.floor(1000 + Math.random() * 9000);
+
   const trip = {
     id: Date.now().toString(),
-    from, to, date, pax, flightNum,
+    from, to, date, pax,
+    flightNum: selectedFlight.num,
+    depTime: selectedFlight.dep,
+    arrTime: selectedFlight.arr,
+    duration: selectedFlight.dur,
     status: "Scheduled",
     checkedIn: false,
     boardingPass: null,
@@ -94,7 +192,7 @@ function bookFlight() {
   };
   state.trips.push(trip);
   saveData(state);
-  alert("Booked! Flight " + flightNum + " on " + date);
+  alert("Booked! " + trip.flightNum + " on " + date + " at " + trip.depTime);
   goTo("trips");
 }
 
@@ -112,7 +210,7 @@ function renderTrips(el) {
           <span class="status-badge status-${delay.type}">${delay.type.replace("-"," ")}</span>
         </div>
         <p>${t.from} → ${t.to}</p>
-        <p style="font-size:0.85rem; color:var(--muted);">${t.date} • ${t.pax} pax</p>
+        <p style="font-size:0.85rem; color:var(--muted);">${t.date} • ${t.depTime || ""}–${t.arrTime || ""} • ${t.pax} pax</p>
         ${delay.message ? `<p style="color:var(--warning); font-size:0.85rem;">${delay.message}</p>` : ""}
         ${!t.checkedIn 
           ? `<button class="btn" onclick="checkIn('${t.id}')">Check In</button>` 
@@ -140,7 +238,7 @@ function showPass(id) {
     <div class="card">
       <h3>${trip.flightNum}</h3>
       <p>${trip.from} → ${trip.to}</p>
-      <p>${trip.date}</p>
+      <p>${trip.date} • ${trip.depTime || ""}</p>
       <p><strong>${trip.passengerName}</strong></p>
       <div class="qr-container" id="qr"></div>
       <p style="text-align:center; font-size:0.8rem; color:var(--muted);">${trip.boardingPass}</p>
@@ -148,9 +246,13 @@ function showPass(id) {
     </div>
     <div class="note">Show this QR to the pilot or agent when boarding. In the real app this will be scannable by employees.</div>
   `;
-  QRCode.toCanvas(document.getElementById("qr"), trip.boardingPass, { width: 180 }, function (err) {
-    if (err) document.getElementById("qr").textContent = trip.boardingPass;
-  });
+  if (typeof QRCode !== "undefined") {
+    QRCode.toCanvas(document.getElementById("qr"), trip.boardingPass, { width: 180 }, function (err) {
+      if (err) document.getElementById("qr").textContent = trip.boardingPass;
+    });
+  } else {
+    document.getElementById("qr").textContent = trip.boardingPass;
+  }
 }
 
 function renderMap(el) {
