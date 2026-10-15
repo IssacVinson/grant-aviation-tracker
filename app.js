@@ -147,6 +147,24 @@ const AIRPORTS = {
   AUK: "Alakanuk", SXP: "Nunam Iqua", MOU: "Mountain Village", PQS: "Pilot Station"
 };
 
+// Approximate airport positions [lat, lon] for the employee run map (decimal degrees, west negative).
+const AIRPORT_COORDS = {
+  ANC: [61.174, -149.996], ENA: [60.573, -151.245], BET: [60.780, -161.838], DLG: [59.045, -158.505],
+  AKN: [58.677, -156.649], CDB: [55.206, -162.725], DUT: [53.900, -166.544], EMK: [62.786, -164.491],
+  TWA: [59.076, -160.273], TOG: [59.053, -160.397], KMO: [58.990, -159.050], WKK: [59.282, -158.618],
+  VAK: [61.534, -165.584], HPB: [61.524, -166.147], KOT: [63.031, -163.533], KPN: [59.933, -164.031],
+  KWK: [59.876, -163.169], OOK: [60.542, -165.087], TNK: [60.576, -165.272], KKH: [59.961, -162.881],
+  KLL: [59.128, -156.859], IGG: [59.324, -155.902], KVC: [55.116, -162.266], KFP: [54.847, -163.410],
+  AKB: [52.220, -174.206], AUK: [62.680, -164.660], SXP: [62.521, -164.848], MOU: [62.096, -163.682],
+  PQS: [61.934, -162.900]
+};
+
+// Faint region caption on the run map, by run base.
+const MAP_REGIONS = {
+  ANC: "Cook Inlet", ENA: "Cook Inlet", BET: "Yukon-Kuskokwim Delta", EMK: "Lower Yukon",
+  DLG: "Bristol Bay", AKN: "Bristol Bay", CDB: "Alaska Peninsula", DUT: "Aleutian Islands"
+};
+
 // Employee home bases (selectable on the Base tab).
 const BASES = ["ANC", "ENA", "BET", "DLG", "AKN", "CDB", "DUT", "EMK"];
 
@@ -302,6 +320,7 @@ function render() {
     currentPage = tab.page;
     renderNav();
   }
+  syncRunMapTimer(); // refreshes renderRunProgress in place, so the live planes list is never wiped
   const role = state.employeeMode ? "employee" : "passenger";
   document.querySelectorAll(".role-switch button").forEach(b => b.classList.toggle("active", b.dataset.role === role));
   tab.render(document.getElementById("content"));
@@ -998,6 +1017,9 @@ function renderRunMap(el) {
         ${runs.map(r => `<option value="${r.id}"${r.id === selectedMapRunId ? " selected" : ""}>${r.flightNum} · ${runStops(r).join("→")}</option>`).join("")}
       </select>
       ${fallback ? `<p style="font-size:0.8rem; color:var(--muted);">No runs touch ${base} today — showing all runs.</p>` : ""}
+      <div id="runMapSvg" class="run-map"></div>
+    </div>
+    <div class="card">
       <div id="runProgress"></div>
     </div>
     <div class="card">
@@ -1034,6 +1056,18 @@ function renderRunProgress() {
   const stops = runStops(run);
   const pct = runPosition(legs, info.now) * 100;
   const n = legs.length;
+  const pos = runMapState(legs, info.now);
+  const mapEl = document.getElementById("runMapSvg");
+  if (mapEl) mapEl.innerHTML = runMapSvgHtml(run, info, pos);
+  const leg = legs[pos.leg];
+  const legText = l => `${l.from} → ${l.to}`;
+  const stats = {
+    pre: [["Next leg", legText(leg), "dep " + fmtMin(leg.adjDep)], ["ETA next stop", `${leg.to} ${fmtMin(leg.adjArr)}`]],
+    air: [["Current leg", legText(leg), "Airborne"], ["ETA next stop", `${leg.to} ${fmtMin(leg.adjArr)}`]],
+    ground: [["On ground", leg.from, `next ${legText(leg)} dep ${fmtMin(leg.adjDep)}`], ["ETA next stop", `${leg.to} ${fmtMin(leg.adjArr)}`]],
+    done: [["Last leg", legText(leg), "Completed"], ["Arrived", `${leg.to} ${fmtMin(leg.adjArr)}`]]
+  }[pos.phase];
+  stats.push(["Complete", `${Math.round(pct)}%`], ["Updated", fmtMin(info.now)]);
   const stopRows = stops.map((code, i) => {
     const arr = i > 0 ? legs[i - 1].adjArr : null;
     const dep = i < n ? legs[i].adjDep : null;
@@ -1045,9 +1079,13 @@ function renderRunProgress() {
       </div>`;
   }).join("");
   out.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem;">
-      <span style="font-size:0.85rem;">${run.flightNum} · ${run.aircraft}</span>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+      <span style="font-size:0.85rem;"><strong>${run.flightNum}</strong> · ${run.aircraft}</span>
       <span>${statusBadges(info)}</span>
+    </div>
+    <div class="rm-stats">
+      ${stats.map(([label, value, sub]) => `
+        <div><span>${label}</span><b>${value}</b>${sub ? `<small>${sub}</small>` : ""}</div>`).join("")}
     </div>
     <div style="position:relative; height:12px; margin:1.25rem 0.5rem 0.25rem; border-radius:6px; overflow:visible; background:var(--accent);">
       <div style="position:absolute; left:0; top:0; bottom:0; width:${pct}%; background:var(--success); border-radius:6px 0 0 6px;"></div>
@@ -1059,6 +1097,181 @@ function renderRunProgress() {
     </div>
     ${stopRows}
   `;
+}
+
+// ---------- Run map (inline SVG) ----------
+
+const RUN_MAP_W = 400;
+const RUN_MAP_H = 300;
+let runMapTimer = null;
+
+// Where the plane is: before departure, airborne on leg i (fraction t), on the ground waiting for leg i, or done.
+function runMapState(legs, now) {
+  if (now < legs[0].adjDep) return { phase: "pre", leg: 0, t: 0 };
+  for (let i = 0; i < legs.length; i++) {
+    const l = legs[i];
+    if (now < l.adjDep) return { phase: "ground", leg: i, t: 0 };
+    if (now < l.adjArr) return { phase: "air", leg: i, t: (now - l.adjDep) / (l.adjArr - l.adjDep) };
+  }
+  return { phase: "done", leg: legs.length - 1, t: 1 };
+}
+
+// Quadratic Bézier point and tangent for a leg drawn as [start, control, end].
+function curvePoint([a, c, b], t) {
+  const u = 1 - t;
+  return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]];
+}
+
+function curveTangent([a, c, b], t) {
+  return [2 * (1 - t) * (c[0] - a[0]) + 2 * t * (b[0] - c[0]), 2 * (1 - t) * (c[1] - a[1]) + 2 * t * (b[1] - c[1])];
+}
+
+// Split a curve at t into the flown part and the part still ahead.
+function splitCurve(curve, t) {
+  const [a, c, b] = curve;
+  const lerp = (p, q) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+  const m = curvePoint(curve, t);
+  return [[a, lerp(a, c), m], [m, lerp(c, b), b]];
+}
+
+function curvePath([a, c, b]) {
+  const f = p => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`;
+  return `M${f(a)} Q${f(c)} ${f(b)}`;
+}
+
+function headingDeg(v) {
+  return Math.atan2(v[0], -v[1]) * 180 / Math.PI; // 0 = north (up), clockwise
+}
+
+function niceStep(span) {
+  return [0.1, 0.25, 0.5, 1, 2, 5, 10].find(s => span / s <= 5) || 10;
+}
+
+function runMapSvgHtml(run, info, pos) {
+  const W = RUN_MAP_W, H = RUN_MAP_H;
+  const legs = info.legs;
+  const stops = runStops(run);
+  if (!stops.every(c => AIRPORT_COORDS[c])) return `<p class="note">No map position for ${stops.filter(c => !AIRPORT_COORDS[c]).join(", ")}.</p>`;
+
+  // Equirectangular projection: x = lon·cos(mean lat), y = −lat. Legs bow slightly left of travel, so out-and-back legs read as two arcs.
+  const coords = stops.map(c => AIRPORT_COORDS[c]);
+  const k = Math.cos(coords.reduce((s, c) => s + c[0], 0) / coords.length * Math.PI / 180);
+  const raw = coords.map(([lat, lon]) => [lon * k, -lat]);
+  const rawCurves = legs.map((_, i) => {
+    const a = raw[i], b = raw[i + 1];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    return [a, [(a[0] + b[0]) / 2 + dy * 0.18, (a[1] + b[1]) / 2 - dx * 0.18], b];
+  });
+  const all = rawCurves.flat();
+  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const spanX = Math.max(Math.max(...xs) - Math.min(...xs), 0.4), spanY = Math.max(Math.max(...ys) - Math.min(...ys), 0.3);
+  const s = Math.min((W - 2 * 56) / spanX, (H - 2 * 50) / spanY);
+  const toScreen = p => [(p[0] - cx) * s + W / 2, (p[1] - cy) * s + H / 2];
+  const pts = raw.map(toScreen);
+  const curves = rawCurves.map(c => c.map(toScreen));
+
+  // Graticule over the visible lat/lon range.
+  const lonAt = x => ((x - W / 2) / s + cx) / k;
+  const latAt = y => -((y - H / 2) / s + cy);
+  const lonMin = lonAt(0), lonMax = lonAt(W), latMin = latAt(H), latMax = latAt(0);
+  const lonStep = niceStep(lonMax - lonMin), latStep = niceStep(latMax - latMin);
+  const deg = (v, step, pos, neg) => `${Math.abs(v).toFixed(step >= 1 ? 0 : step >= 0.5 ? 1 : 2)}°${v >= 0 ? pos : neg}`;
+  let grid = "";
+  for (let lon = Math.ceil(lonMin / lonStep) * lonStep; lon <= lonMax; lon += lonStep) {
+    const x = ((lon * k - cx) * s + W / 2).toFixed(1);
+    grid += `<line x1="${x}" y1="0" x2="${x}" y2="${H}"/><text class="rm-grid-label" x="${+x + 3}" y="${H - 5}">${deg(lon, lonStep, "E", "W")}</text>`;
+  }
+  for (let lat = Math.ceil(latMin / latStep) * latStep; lat <= latMax; lat += latStep) {
+    const y = ((-lat - cy) * s + H / 2).toFixed(1);
+    grid += `<line x1="0" y1="${y}" x2="${W}" y2="${y}"/><text class="rm-grid-label" x="4" y="${+y - 3}">${deg(lat, latStep, "N", "S")}</text>`;
+  }
+
+  // Route: flown portion green with glow, remaining red dashed.
+  const flown = i => pos.phase === "done" || i < pos.leg ? 1 : (i === pos.leg && pos.phase === "air" ? pos.t : 0);
+  let ahead = "", behind = "";
+  curves.forEach((c, i) => {
+    const f = flown(i);
+    if (f >= 1) behind += curvePath(c);
+    else if (f <= 0) ahead += curvePath(c);
+    else {
+      const [done, rest] = splitCurve(c, f);
+      behind += curvePath(done);
+      ahead += curvePath(rest);
+    }
+  });
+
+  // Stops: one marker per airport (out-and-back runs revisit the base), labelled with effective 24h times.
+  const byCode = new Map();
+  stops.forEach((code, i) => {
+    const time = i === 0 ? legs[0].adjDep : legs[i - 1].adjArr;
+    const delayed = (i === 0 ? legs[0].delay : legs[i - 1].delay) > 0;
+    const passed = i === 0 ? info.now >= legs[0].adjDep : info.now >= legs[i - 1].adjArr;
+    const entry = byCode.get(code) || { code, pt: pts[i], times: [], delayed: false, passed: false };
+    entry.times.push(fmtMin(time));
+    entry.delayed = entry.delayed || delayed;
+    entry.passed = entry.passed || passed;
+    byCode.set(code, entry);
+  });
+  // Greedy label placement: try above, below, then further out, skipping spots that overlap placed labels.
+  const placed = [];
+  const overlaps = r => placed.some(p => r.x < p.x + p.w && p.x < r.x + r.w && r.y < p.y + p.h && p.y < r.y + r.h);
+  let stopsSvg = "";
+  [...byCode.values()].forEach(st => {
+    const text = `${st.code} ${st.times.join(" / ")}`;
+    const w = text.length * 5.8 + 4;
+    const lx = Math.min(Math.max(st.pt[0], w / 2 + 4), W - w / 2 - 4);
+    const tries = [-11, 20, -25, 34].map(dy => ({ x: lx - w / 2, y: st.pt[1] + dy - 10, w, h: 13, dy }));
+    const spot = tries.find(r => r.y > 2 && r.y + r.h < H - 2 && !overlaps(r)) || tries[0];
+    placed.push(spot);
+    stopsSvg += `<circle class="${st.passed ? "rm-stop-done" : "rm-stop"}" cx="${st.pt[0].toFixed(1)}" cy="${st.pt[1].toFixed(1)}" r="${st.code === stops[0] ? 6 : 5}"/>
+      <text class="rm-label" x="${lx.toFixed(1)}" y="${(st.pt[1] + spot.dy).toFixed(1)}" text-anchor="middle"><tspan class="rm-code">${st.code}</tspan> <tspan class="${st.delayed ? "rm-time-late" : "rm-time"}">${st.times.join(" / ")}</tspan></text>`;
+  });
+
+  // Plane: at the origin before departure, on the curve when airborne, at the stop on the ground.
+  const cur = curves[pos.leg];
+  const at = pos.phase === "air" ? curvePoint(cur, pos.t) : pos.phase === "done" ? cur[2] : cur[0];
+  const heading = headingDeg(curveTangent(cur, pos.phase === "air" ? pos.t : pos.phase === "done" ? 1 : 0));
+  const plane = `
+    <g transform="translate(${at[0].toFixed(1)} ${at[1].toFixed(1)})">
+      ${pos.phase === "air" ? `<circle class="rm-pulse" r="11"/>` : ""}
+      <path class="rm-plane" transform="rotate(${heading.toFixed(0)}) scale(1.15)"
+        d="M0,-11 C1.2,-11 1.7,-9.6 1.7,-8 L1.7,-3 L10,2 L10,4.4 L1.7,1.8 L1.7,6.8 L4.4,9 L4.4,10.8 L0,9.6 L-4.4,10.8 L-4.4,9 L-1.7,6.8 L-1.7,1.8 L-10,4.4 L-10,2 L-1.7,-3 L-1.7,-8 C-1.7,-9.6 -1.2,-11 0,-11 Z"/>
+    </g>`;
+  const where = { pre: `at ${stops[0]}, departs ${fmtMin(legs[0].adjDep)}`, air: `airborne ${legs[pos.leg].from} to ${legs[pos.leg].to}`,
+    ground: `on the ground at ${legs[pos.leg].from}`, done: `completed at ${stops[stops.length - 1]}` }[pos.phase];
+  const region = MAP_REGIONS[run.base] || "Alaska";
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${run.flightNum} route ${stops.join(" to ")}; plane ${where}">
+      <defs>
+        <filter id="rmGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="2.5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <rect width="${W}" height="${H}" fill="#0f1620"/>
+      <g class="rm-grid">${grid}</g>
+      <text class="rm-region" x="${W - 8}" y="18" text-anchor="end">${region.toUpperCase()} · AK</text>
+      <text class="rm-north" x="${W - 14}" y="38" text-anchor="middle">N</text>
+      <path class="rm-north-arrow" d="M${W - 14} 42 l-4 9 l4 -2.5 l4 2.5 Z"/>
+      <path class="rm-ahead" d="${ahead}"/>
+      <path class="rm-flown" d="${behind}" filter="url(#rmGlow)"/>
+      ${stopsSvg}
+      ${plane}
+    </svg>
+    ${pos.phase === "done" ? `<div class="rm-banner">Completed</div>` : ""}`;
+}
+
+// Refresh the run map every 30s only while the employee Map tab is showing; called from render().
+function syncRunMapTimer() {
+  const active = state.employeeMode && currentPage === "runmap";
+  if (active && !runMapTimer) {
+    runMapTimer = setInterval(renderRunProgress, 30000);
+  } else if (!active && runMapTimer) {
+    clearInterval(runMapTimer);
+    runMapTimer = null;
+  }
 }
 
 function showLivePlanes() {
@@ -1431,11 +1644,6 @@ document.querySelector(".role-switch").addEventListener("click", e => {
   const btn = e.target.closest("button[data-role]");
   if (btn) setRole(btn.dataset.role);
 });
-
-// Keep the run map position current without wiping the live planes list.
-setInterval(() => {
-  if (state.employeeMode && currentPage === "runmap") renderRunProgress();
-}, 60000);
 
 // Init
 renderNav();
