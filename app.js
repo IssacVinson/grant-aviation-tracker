@@ -822,7 +822,9 @@ function runNow(run) {
 }
 
 function runsForBase(base) {
-  return RUNS.filter(r => r.legs.some(l => l.from === base || l.to === base));
+  // Earliest first-leg departure first, so the day reads morning to evening.
+  return RUNS.filter(r => r.legs.some(l => l.from === base || l.to === base))
+    .sort((a, b) => a.legs[0].depMin - b.legs[0].depMin || a.flightNum.localeCompare(b.flightNum));
 }
 
 function runStops(run) {
