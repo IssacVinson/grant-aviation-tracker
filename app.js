@@ -227,6 +227,7 @@ function loadData() {
   if (!isPlainObject(data.flightManifests)) data.flightManifests = {};
   if (!BASES.includes(data.employeeBase)) data.employeeBase = "BET";
   if (!isPlainObject(data.runDelays)) data.runDelays = {};
+  if (typeof data.checkinFlight !== "string") data.checkinFlight = null;
   // The mock run day is anchored once per calendar day; a new day starts with fresh runs and no delays.
   const today = localDateISO(new Date());
   const anchor = data.runAnchor;
@@ -313,6 +314,7 @@ function renderNav() {
 
 function render() {
   stopCamera(); // every page change, role switch and re-render replaces the viewfinder
+  hideCheckinModal();
   const tabs = currentTabs();
   let tab = tabs.find(t => t.page === currentPage);
   if (!tab) {
@@ -1393,7 +1395,6 @@ function postDelay() {
 let cameraStream = null;
 let cameraRequest = 0;   // bumped on stop so a late getUserMedia result is discarded
 let recentCheckIns = []; // this session only, newest first
-let lastCheckinResult = null;
 
 function clockHHMM(d = new Date()) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -1403,11 +1404,121 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-// Look a boarding pass up in trips and manifests and check the passenger in.
-// Returns { status: "ok" | "already" | "invalid", ... } for the result card.
-function validateBoardingPass(rawCode) {
+// Every scheduled departure today by flight number: { num, from, route, depMin, dep }. Runs use their adjusted first leg.
+function scheduledDepartures() {
+  const byNum = new Map();
+  const add = (num, from, route, depMin) => {
+    if (!byNum.has(num)) byNum.set(num, { num, from, route, depMin, dep: fmtMin(depMin) });
+  };
+  const postedDep = (num, dep) => toMinutes((state.delays[num] && state.delays[num].newDepTime) || dep);
+  Object.keys(MOCK_FLIGHTS).forEach(key => {
+    if (key === "default") return;
+    const [from, to] = key.split("-").map(airportCodeOf);
+    MOCK_FLIGHTS[key].forEach(f => add(f.num, from, `${from} → ${to}`, postedDep(f.num, f.dep)));
+  });
+  CONNECTION_FLIGHTS.forEach(([num, from, to, dep]) => add(num, from, `${from} → ${to}`, postedDep(num, dep)));
+  RUNS.forEach(run => add(run.flightNum, run.legs[0].from, runStops(run).join(" → "), runStatus(run).legs[0].adjDep));
+  return byNum;
+}
+
+// Flight numbers a pass is good for: every leg of a multi-leg trip, else its manifest, else parsed from GRANT-<num>-….
+function passFlightNums(code, trip, manifestNum) {
+  const nums = new Set();
+  if (trip) {
+    (Array.isArray(trip.legs) ? trip.legs : []).forEach(l => { if (l.num) nums.add(l.num); });
+    if (trip.flightNum) nums.add(trip.flightNum);
+  }
+  if (manifestNum) nums.add(manifestNum);
+  if (!nums.size) {
+    const m = /^GRANT-(GV\d+)-/i.exec(code || "");
+    if (m) nums.add(m[1].toUpperCase());
+  }
+  return [...nums];
+}
+
+// Every manifest passenger with their trip (if booked) and the flights their pass covers.
+function checkinPassengers() {
+  const list = [];
+  Object.keys(state.flightManifests).forEach(num => {
+    state.flightManifests[num].forEach(entry => {
+      const trip = entry.tripId ? state.trips.find(t => t.id === entry.tripId) || null : null;
+      list.push({ entry, trip, manifestNum: num, flightNums: passFlightNums(entry.boardingPass, trip, num) });
+    });
+  });
+  return list;
+}
+
+function passengersOnFlight(num, pax = checkinPassengers()) {
+  return pax.filter(p => p.flightNums.includes(num));
+}
+
+// Today's flights departing the base (schedules, runs, and any booked leg leaving it), sorted by departure.
+function checkinFlightsForBase(base) {
+  const scheduled = scheduledDepartures();
+  const flights = new Map();
+  scheduled.forEach(f => { if (f.from === base) flights.set(f.num, f); });
+  checkinPassengers().forEach(({ trip }) => {
+    if (!trip) return; // seeded passengers sit on scheduled flights, already covered above
+    const legs = Array.isArray(trip.legs) && trip.legs.length
+      ? trip.legs
+      : [{ num: trip.flightNum, from: trip.from, to: trip.to, dep: trip.depTime }];
+    legs.forEach(l => {
+      const from = airportCodeOf(l.from);
+      if (!l.num || from !== base || flights.has(l.num) || !/^\d{1,2}:\d{2}$/.test(l.dep || "")) return;
+      flights.set(l.num, { num: l.num, from, route: `${from} → ${airportCodeOf(l.to)}`, depMin: toMinutes(l.dep), dep: fmtMin(toMinutes(l.dep)) });
+    });
+  });
+  return [...flights.values()].sort((a, b) => a.depMin - b.depMin || a.num.localeCompare(b.num));
+}
+
+// Keep the saved selection if it departs this base; otherwise the first flight with passengers, else the next upcoming, else the first.
+function resolveCheckinFlight(flights) {
+  let f = flights.find(x => x.num === state.checkinFlight);
+  if (!f) {
+    const pax = checkinPassengers();
+    const nowMin = minutesSinceMidnight(localDateISO(new Date()));
+    f = flights.find(x => passengersOnFlight(x.num, pax).length) || flights.find(x => x.depMin >= nowMin) || flights[0] || null;
+    state.checkinFlight = f ? f.num : null;
+    saveData(state);
+  }
+  return f;
+}
+
+function selectedCheckinFlight() {
+  return resolveCheckinFlight(checkinFlightsForBase(state.employeeBase));
+}
+
+function setCheckinFlight(num) {
+  state.checkinFlight = num;
+  saveData(state);
+  updateCheckinSummary();
+}
+
+function updateCheckinSummary() {
+  const out = document.getElementById("checkinSummary");
+  if (!out || !state.checkinFlight) return;
+  const pax = passengersOnFlight(state.checkinFlight);
+  const n = pax.length;
+  out.textContent = `${n} passenger${n === 1 ? "" : "s"} · ${pax.filter(p => p.entry.checkedIn).length} checked in`;
+}
+
+// "GV2905 · BET → VAK · 08:30" for the flight a pass is actually booked on.
+function passBookingText(trip, manifestNum) {
+  if (trip) {
+    const legs = Array.isArray(trip.legs) && trip.legs.length ? trip.legs : null;
+    const stops = legs ? [legs[0].from, ...legs.map(l => l.to)] : [trip.from, trip.to];
+    return `${trip.itineraryNum || trip.flightNum} · ${stops.map(airportCodeOf).join(" → ")} · ${getEffectiveDep(trip).time}`;
+  }
+  const f = scheduledDepartures().get(manifestNum);
+  return f ? `${f.num} · ${f.route} · ${f.dep}` : manifestNum;
+}
+
+// Look a boarding pass up in trips and manifests and check the passenger in if it is for the selected flight.
+// Returns { status: "ok" | "already" | "wrong" | "invalid", ... } for the result modal.
+function validateBoardingPass(rawCode, flight) {
   const code = (rawCode || "").trim();
   if (!code) return { status: "invalid", code, reason: "Enter or scan a boarding code." };
+  if (!flight) return { status: "invalid", code, reason: "Select a flight to confirm passengers for first." };
   let trip = state.trips.find(t => t.boardingPass === code) || null;
   let flightNum = trip ? trip.flightNum : null;
   let entry = null;
@@ -1422,23 +1533,23 @@ function validateBoardingPass(rawCode) {
   if (trip && !entry) entry = getManifestEntryForTrip(trip);
   if (!entry) {
     const reason = /^GRANT-/i.test(code)
-      ? `No trip or manifest matches ${code}.`
-      : `${code} is not a Grant boarding pass code (expected GRANT-…).`;
+      ? "No trip or manifest matches this code. Check it was typed correctly or scan again."
+      : "Not a Grant boarding pass code (expected GRANT-…).";
     return { status: "invalid", code, reason };
   }
 
-  const manifest = state.flightManifests[flightNum];
-  const known = getKnownFlights().find(f => f.num === flightNum);
-  const delay = state.delays[flightNum];
   const result = {
     code,
     name: trip ? trip.passengerName : entry.name,
-    flightNum,
-    route: trip ? `${trip.from} → ${trip.to}` : (known ? known.route : "—"),
-    dep: trip ? getEffectiveDep(trip).time : ((delay && delay.newDepTime) || (known ? known.dep : "")),
-    paxIndex: manifest.indexOf(entry) + 1,
-    paxTotal: manifest.length
+    flightNum: flight.num,
+    route: flight.route,
+    dep: flight.dep
   };
+  if (!passFlightNums(code, trip, flightNum).includes(flight.num)) {
+    result.status = "wrong";
+    result.booked = passBookingText(trip, flightNum);
+    return result;
+  }
   if (entry.checkedIn) {
     result.status = "already";
     result.time = entry.checkedInAt || null;
@@ -1453,17 +1564,27 @@ function validateBoardingPass(rawCode) {
     saveData(state);
     result.status = "ok";
     result.time = entry.checkedInAt;
-    recentCheckIns.unshift({ time: result.time, name: result.name, flightNum });
+    recentCheckIns.unshift({ time: result.time, name: result.name, flightNum: flight.num });
     recentCheckIns = recentCheckIns.slice(0, 5);
   }
-  result.checkedInCount = manifest.filter(p => p.checkedIn).length;
   return result;
 }
 
 function renderCheckin(el) {
   const canCamera = !!navigator.mediaDevices?.getUserMedia;
+  const flights = checkinFlightsForBase(state.employeeBase);
+  const selected = resolveCheckinFlight(flights);
   el.innerHTML = `
     <h2>Passenger Check-in</h2>
+    <div class="card">
+      <label for="checkinFlight">Confirming passengers for</label>
+      ${flights.length ? `
+        <select id="checkinFlight" onchange="setCheckinFlight(this.value)">
+          ${flights.map(f => `<option value="${f.num}"${f === selected ? " selected" : ""}>${f.num} · ${f.route} · ${f.dep}</option>`).join("")}
+        </select>
+        <p id="checkinSummary" class="checkin-summary"></p>`
+      : `<p class="checkin-summary">No flights depart ${airportLabel(state.employeeBase)} today.</p>`}
+    </div>
     <div class="card">
       <div class="viewfinder" id="viewfinder">
         <video id="cameraVideo" muted playsinline autoplay hidden></video>
@@ -1480,51 +1601,65 @@ function renderCheckin(el) {
         onkeydown="if (event.key === 'Enter') submitCheckinCode()">
       <button class="btn btn-outline" onclick="submitCheckinCode()">Validate</button>
     </div>
-    <div id="checkinResult"></div>
     <div class="card">
       <h3>Recent check-ins</h3>
       <div id="recentCheckins"></div>
     </div>
   `;
-  renderCheckinResult(lastCheckinResult);
+  updateCheckinSummary();
   renderRecentCheckins();
 }
 
-function renderCheckinResult(r) {
-  lastCheckinResult = r;
-  const out = document.getElementById("checkinResult");
-  if (!out) return;
-  if (!r) {
-    out.innerHTML = "";
-    return;
-  }
-  if (r.status === "invalid") {
-    out.innerHTML = `
-      <div class="card checkin-result">
-        <div class="result-icon result-bad">✗</div>
-        <h3>Pass not found</h3>
-        <p style="font-size:0.9rem; color:var(--muted);">${escapeHtml(r.reason)}</p>
-      </div>`;
-    return;
-  }
-  const ok = r.status === "ok";
-  const statusText = ok
-    ? `Checked in${r.time ? ` at ${r.time}` : ""}`
-    : `Already checked in${r.time ? ` at ${r.time}` : ""}`;
-  out.innerHTML = `
-    <div class="card checkin-result">
-      <div class="result-icon ${ok ? "result-ok" : "result-warn"}">${ok ? "✓" : "!"}</div>
-      <h3>${escapeHtml(r.name)}</h3>
-      <p class="checkin-status" style="color:var(${ok ? "--success" : "--warning"});">${statusText}</p>
-      <div class="checkin-details">
-        <div><span>Flight</span><b>${r.flightNum}</b></div>
-        <div><span>Route</span><b>${escapeHtml(r.route)}</b></div>
-        <div><span>Departure</span><b>${r.dep || "—"}</b></div>
-        <div><span>Passenger</span><b>${r.paxIndex} of ${r.paxTotal}</b></div>
-        <div><span>Checked in</span><b>${r.checkedInCount}/${r.paxTotal}</b></div>
-      </div>
-      <p style="font-size:0.75rem; color:var(--muted); margin-top:0.5rem;">${escapeHtml(r.code)}</p>
+function checkinRow(label, value) {
+  return `<div><span>${label}</span><b>${escapeHtml(value || "—")}</b></div>`;
+}
+
+// Result popup: green confirmed, amber already checked in, red wrong flight / not found.
+function showCheckinModal(r) {
+  hideCheckinModal();
+  const kinds = {
+    ok: { icon: "✓", cls: "result-ok", title: "Passenger confirmed" },
+    already: { icon: "!", cls: "result-warn", title: `Already checked in${r.time ? ` at ${r.time}` : ""}` },
+    wrong: { icon: "✗", cls: "result-bad", title: "Wrong flight" },
+    invalid: { icon: "✗", cls: "result-bad", title: r.title || "Not found" }
+  };
+  const k = kinds[r.status];
+  let rows = "";
+  if (r.status === "ok") rows = checkinRow("Flight", r.flightNum) + checkinRow("Route", r.route) + checkinRow("Departure", r.dep) + checkinRow("Pass", r.code);
+  else if (r.status === "already") rows = checkinRow("Flight", r.flightNum) + checkinRow("Pass", r.code);
+  else if (r.status === "wrong") rows = checkinRow("Booked on", r.booked) + checkinRow("Selected", r.flightNum);
+  else if (r.code) rows = checkinRow("Entered code", r.code);
+  const overlay = document.createElement("div");
+  overlay.className = "ci-overlay";
+  overlay.id = "checkinModal";
+  overlay.innerHTML = `
+    <div class="ci-modal" role="dialog" aria-modal="true" aria-labelledby="ciTitle">
+      <div class="result-icon ${k.cls}" aria-hidden="true">${k.icon}</div>
+      <h3 id="ciTitle" class="ci-title ci-${r.status}">${escapeHtml(k.title)}</h3>
+      ${r.name ? `<p class="ci-name">${escapeHtml(r.name)}</p>` : ""}
+      ${rows ? `<div class="checkin-details">${rows}</div>` : ""}
+      ${r.reason ? `<p class="ci-hint">${escapeHtml(r.reason)}</p>` : ""}
+      <button class="btn" id="ciNext" onclick="closeCheckinModal(true)">Next passenger</button>
     </div>`;
+  overlay.addEventListener("click", e => { if (e.target === overlay) closeCheckinModal(false); });
+  document.body.appendChild(overlay);
+  document.getElementById("ciNext").focus();
+  if (r.status === "ok" && navigator.vibrate) navigator.vibrate(60);
+}
+
+function hideCheckinModal() {
+  const modal = document.getElementById("checkinModal");
+  if (modal) modal.remove();
+}
+
+// "Next passenger" clears the code; overlay click / Escape keep it selected for a quick fix.
+function closeCheckinModal(clear) {
+  hideCheckinModal();
+  const input = document.getElementById("checkinCode");
+  if (!input) return;
+  if (clear) input.value = "";
+  input.focus();
+  if (!clear) input.select();
 }
 
 function renderRecentCheckins() {
@@ -1541,27 +1676,27 @@ function renderRecentCheckins() {
 }
 
 function runCheckin(code) {
-  renderCheckinResult(validateBoardingPass(code));
+  showCheckinModal(validateBoardingPass(code, selectedCheckinFlight()));
+  updateCheckinSummary();
   renderRecentCheckins();
 }
 
 function submitCheckinCode() {
-  const input = document.getElementById("checkinCode");
-  runCheckin(input.value);
-  input.select();
+  runCheckin(document.getElementById("checkinCode").value);
 }
 
-// Pick a random pass that exists in the mock data and is not checked in yet.
+// Pick a random pass not checked in yet: ~70% from the selected flight, ~30% from another (to demo Wrong flight).
 function simulateScan() {
-  const pending = [];
-  Object.values(state.flightManifests).forEach(list => list.forEach(p => {
-    if (p.boardingPass && !p.checkedIn) pending.push(p.boardingPass);
-  }));
+  const flight = selectedCheckinFlight();
+  const pending = checkinPassengers().filter(p => p.entry.boardingPass && !p.entry.checkedIn);
   if (!pending.length) {
-    renderCheckinResult({ status: "invalid", code: "", reason: "Every passenger with a boarding pass is already checked in." });
+    showCheckinModal({ status: "invalid", title: "No passes left", code: "", reason: "Every passenger with a boarding pass is already checked in." });
     return;
   }
-  const code = pending[Math.floor(Math.random() * pending.length)];
+  const mine = flight ? pending.filter(p => p.flightNums.includes(flight.num)) : [];
+  const others = pending.filter(p => !mine.includes(p));
+  const pool = mine.length && (!others.length || Math.random() < 0.7) ? mine : others;
+  const code = pool[Math.floor(Math.random() * pool.length)].entry.boardingPass;
   document.getElementById("checkinCode").value = code;
   runCheckin(code);
 }
@@ -1638,6 +1773,10 @@ function goTo(page) {
 document.querySelector(".bottom-nav").addEventListener("click", e => {
   const btn = e.target.closest("button[data-page]");
   if (btn) goTo(btn.dataset.page);
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && document.getElementById("checkinModal")) closeCheckinModal(false);
 });
 
 document.querySelector(".role-switch").addEventListener("click", e => {
