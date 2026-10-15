@@ -1,50 +1,27 @@
-# Grant Aviation Live Tracker
+# Grant Aviation — Mobile Web Prototype
 
-Unofficial Progressive Web App for tracking Grant Aviation flights in remote Alaska villages.
+This is the iteration version of the Grant Aviation app. It runs as a mobile-first website (localhost or GitHub Pages) so we can design and test functionality quickly before wrapping it as a real native mobile app.
 
-## Why this exists
+## Features in this prototype
+- Mobile app UI with bottom navigation
+- Book flights (local mock booking from real Grant routes)
+- My Trips + Check-in
+- Boarding pass with QR code
+- Employee mode: post delays / weather holds, validate boarding passes
+- Live map of Grant planes (OpenSky ADS-B)
+- Grant-style colors (navy + crimson)
 
-In many remote villages served by Grant Aviation, there is no formal airport check-in. The plane lands on the runway and the pilot counts how many people board. Villagers with WiFi need a simple way to see when the plane is actually approaching so they can head to the airstrip at the right time.
+## How to run
+Open `index.html` or serve the folder:
+```bash
+python -m http.server 8000
+```
+Then open http://localhost:8000
 
-## Features
+## Next steps
+- Refine design based on feedback
+- Add real booking/check-in integration when available
+- Camera-based QR scanning for employees
+- Wrap with Capacitor or convert to React Native / Flutter for App Store / Play Store
 
-- **Live flight tracking** using free OpenSky Network ADS-B data
-- Shows current position, altitude, speed, and heading of Grant Aviation planes (callsigns starting with GUN or GV)
-- Interactive map (Leaflet + OpenStreetMap)
-- List of destinations and bases
-- Mobile-first design, installable as PWA
-- Works on any phone with a browser and WiFi
-
-## Important Notes
-
-- This is **unofficial** and not affiliated with Grant Aviation.
-- Always confirm flight status with official agents: **888-359-4726** or res@flygrant.com
-- OpenSky Network is free for non-commercial use. Rate limits apply (avoid polling more often than every 10 seconds).
-- Coverage depends on ADS-B receivers; some remote areas may have limited tracking.
-- For production use with more reliable data, consider AviationStack or FlightAware AeroAPI (paid tiers).
-
-## Setup / Run
-
-1. Open `index.html` in a modern browser, or
-2. Serve the folder with any static server:
-   ```bash
-   python -m http.server 8000
-   ```
-3. Or deploy to GitHub Pages, Netlify, Vercel, etc.
-
-## Live Tracking
-
-The app fetches current aircraft states from:
-`https://opensky-network.org/api/states/all` (filtered to Alaska bounding box)
-
-It then filters for callsigns matching Grant Aviation (GUN / GV).
-
-## License
-
-MIT - feel free to improve for community use.
-
-## Credits
-
-- OpenSky Network for live ADS-B data
-- Leaflet for maps
-- Logo inspired by the traditional Emmonak owl mask gifted to Grant Aviation
+Data is stored in the browser's localStorage for easy testing.
