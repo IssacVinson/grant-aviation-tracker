@@ -5,15 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Grant Aviation</title>
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#EC1C2C">
+  <meta name="theme-color" content="#000000">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 <body>
   <div id="app">
     <header class="app-header">
-      <div class="logo-text">Grant Aviation</div>
-      <div class="role-toggle" id="roleToggle">Passenger</div>
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">GV</div>
+        <div class="logo-text">Grant Aviation</div>
+      </div>
+      <div class="role-switch" role="group" aria-label="Mode">
+        <button data-role="passenger">Passenger</button>
+        <button data-role="employee">Employee</button>
+      </div>
     </header>
 
     <main id="content"></main>

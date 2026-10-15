@@ -242,7 +242,8 @@ function render() {
     currentPage = tab.page;
     renderNav();
   }
-  document.getElementById("roleToggle").textContent = state.employeeMode ? "Employee" : "Passenger";
+  const role = state.employeeMode ? "employee" : "passenger";
+  document.querySelectorAll(".role-switch button").forEach(b => b.classList.toggle("active", b.dataset.role === role));
   tab.render(document.getElementById("content"));
 }
 
@@ -325,7 +326,7 @@ function selectFlight(index) {
   document.querySelectorAll("[id^='flight-']").forEach(el => {
     el.style.borderColor = "transparent";
   });
-  document.getElementById("flight-" + index).style.borderColor = "var(--crimson)";
+  document.getElementById("flight-" + index).style.borderColor = "var(--accent)";
 
   const btn = document.getElementById("confirmBtn");
   btn.disabled = false;
@@ -445,7 +446,7 @@ function renderMap(el) {
     <h2>Live Map</h2>
     <div class="card">
       <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0.5rem;">Approximate positions of Grant Aviation aircraft (OpenSky ADS-B).</p>
-      <div id="map" style="height:280px; background:#e4e7ec; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted);">Loading map…</div>
+      <div id="map" style="height:280px; background:var(--input-bg); border:1px solid var(--border); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted);">Loading map…</div>
       <div id="flightList" style="margin-top:0.75rem;"></div>
       <button class="btn btn-outline" onclick="loadMap()">Refresh</button>
     </div>
@@ -474,7 +475,7 @@ async function loadMap() {
       const cs = (s[1] || "").trim();
       const lat = s[6], lon = s[5];
       const alt = s[7] ? Math.round(s[7] * 3.28) : "—";
-      return `<div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid #eee;">${cs} • ${alt} ft • ${lat?.toFixed(2)}, ${lon?.toFixed(2)}</div>`;
+      return `<div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid var(--border);">${cs} • ${alt} ft • ${lat?.toFixed(2)}, ${lon?.toFixed(2)}</div>`;
     }).join("");
   } catch (e) {
     mapEl.innerHTML = "Map data unavailable (rate limit or offline).";
@@ -486,7 +487,7 @@ function renderProfile(el) {
     <h2>Profile</h2>
     <div class="card">
       <p>Passenger mode</p>
-      <button class="btn" onclick="toggleRole()">Switch to Employee (demo)</button>
+      <button class="btn" onclick="setRole('employee')">Switch to Employee (demo)</button>
     </div>
     <div class="card">
       <h3>About</h3>
@@ -531,14 +532,16 @@ function renderTools(el) {
         <button class="btn btn-outline" onclick="scanPass()">Validate</button>
         <div id="scanResult"></div>
       </div>
-      <button class="btn btn-outline" onclick="toggleRole()">Switch to Passenger</button>
+      <button class="btn btn-outline" onclick="setRole('passenger')">Switch to Passenger</button>
     `;
   renderFlightStatus();
 }
 
 // Switching mode rebuilds the bottom nav and lands on that mode's first tab.
-function toggleRole() {
-  state.employeeMode = !state.employeeMode;
+function setRole(role) {
+  const employee = role === "employee";
+  if (employee === state.employeeMode) return;
+  state.employeeMode = employee;
   saveData(state);
   currentPage = currentTabs()[0].page;
   renderNav();
@@ -618,13 +621,12 @@ function runStatus(run) {
 }
 
 function statusBadges(info) {
-  const styles = {
-    "Scheduled": "background:#eef4ff; color:var(--navy);",
-    "In progress": "",
-    "Completed": "background:#f2f4f7; color:var(--muted);"
+  const classes = {
+    "Scheduled": "status-scheduled",
+    "In progress": "status-on-time",
+    "Completed": "status-completed"
   };
-  const cls = info.status === "In progress" ? " status-on-time" : "";
-  let html = `<span class="status-badge${cls}" style="${styles[info.status]}">${info.status}</span>`;
+  let html = `<span class="status-badge ${classes[info.status]}">${info.status}</span>`;
   if (info.delay > 0 && info.status !== "Completed") {
     html += ` <span class="status-badge status-delayed">Delayed +${info.delay} min</span>`;
   }
@@ -693,9 +695,9 @@ function renderBase(el) {
     <div class="card">
       <h3>Today at ${airportLabel(base)}</h3>
       ${runs.length ? `
-        <p style="font-size:0.9rem;">${runs.length} run(s) · ${count("In progress")} in progress · ${count("Scheduled")} scheduled · ${count("Completed")} completed${delayed ? ` · <span style="color:var(--crimson); font-weight:600;">${delayed} delayed</span>` : ""}</p>
+        <p style="font-size:0.9rem;">${runs.length} run(s) · ${count("In progress")} in progress · ${count("Scheduled")} scheduled · ${count("Completed")} completed${delayed ? ` · <span style="color:var(--accent); font-weight:600;">${delayed} delayed</span>` : ""}</p>
         ${infos.map(({ run, info }) => `
-          <div style="font-size:0.85rem; padding:0.5rem 0; border-bottom:1px solid #eee;">
+          <div style="font-size:0.85rem; padding:0.5rem 0; border-bottom:1px solid var(--border);">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
               <strong>${run.flightNum}</strong>
               <span>${statusBadges(info)}</span>
@@ -730,10 +732,10 @@ function runCardHtml(run) {
       <p style="font-size:0.85rem; color:var(--muted);">${run.aircraft}</p>
       <p style="margin:0.25rem 0 0.5rem;">${runStops(run).join(" → ")}</p>
       ${info.legs.map(l => `
-        <div style="font-size:0.85rem; padding:0.3rem 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; gap:0.5rem;${info.now >= l.adjArr ? " color:var(--muted);" : ""}">
+        <div style="font-size:0.85rem; padding:0.3rem 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:0.5rem;${info.now >= l.adjArr ? " color:var(--muted);" : ""}">
           <span>${l.from} → ${l.to}</span>
           <span style="text-align:right;">
-            ${l.delay ? `<s style="color:var(--muted);">${fmtMin(l.depMin)}–${fmtMin(l.arrMin)}</s><br><b style="color:var(--crimson);">${fmtMin(l.adjDep)}–${fmtMin(l.adjArr)}</b>` : `${fmtMin(l.depMin)}–${fmtMin(l.arrMin)}`}
+            ${l.delay ? `<s style="color:var(--muted);">${fmtMin(l.depMin)}–${fmtMin(l.arrMin)}</s><br><b style="color:var(--accent);">${fmtMin(l.adjDep)}–${fmtMin(l.adjArr)}</b>` : `${fmtMin(l.depMin)}–${fmtMin(l.arrMin)}`}
           </span>
         </div>`).join("")}
       ${info.status === "Completed" ? "" : `
@@ -804,7 +806,7 @@ function renderRunProgress() {
     const dep = i < n ? legs[i].adjDep : null;
     const passed = i < n ? info.now >= dep : info.now >= arr;
     return `
-      <div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; gap:0.5rem;">
+      <div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:0.5rem;">
         <span><span style="display:inline-block; width:1.2rem; color:var(--success); font-weight:700;">${passed ? "✓" : ""}</span>${airportLabel(code)}</span>
         <span style="color:var(--muted); text-align:right;">${arr !== null ? "arr " + fmtMin(arr) : ""}${arr !== null && dep !== null ? " · " : ""}${dep !== null ? "dep " + fmtMin(dep) : ""}</span>
       </div>`;
@@ -814,10 +816,10 @@ function renderRunProgress() {
       <span style="font-size:0.85rem;">${run.flightNum} · ${run.aircraft}</span>
       <span>${statusBadges(info)}</span>
     </div>
-    <div style="position:relative; height:12px; margin:1.25rem 0.5rem 0.25rem; border-radius:6px; overflow:visible; background:var(--crimson);">
+    <div style="position:relative; height:12px; margin:1.25rem 0.5rem 0.25rem; border-radius:6px; overflow:visible; background:var(--accent);">
       <div style="position:absolute; left:0; top:0; bottom:0; width:${pct}%; background:var(--success); border-radius:6px 0 0 6px;"></div>
-      ${stops.map((_, i) => `<div style="position:absolute; left:${(i / n) * 100}%; top:-3px; width:2px; height:18px; margin-left:-1px; background:var(--navy);"></div>`).join("")}
-      <div style="position:absolute; left:${pct}%; top:50%; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:white; border:3px solid var(--navy); box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
+      ${stops.map((_, i) => `<div style="position:absolute; left:${(i / n) * 100}%; top:-3px; width:2px; height:18px; margin-left:-1px; background:var(--muted);"></div>`).join("")}
+      <div style="position:absolute; left:${pct}%; top:50%; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:var(--text); border:3px solid var(--bg); box-shadow:0 0 0 1px var(--muted), 0 1px 3px rgba(0,0,0,0.6);"></div>
     </div>
     <div style="position:relative; height:1.2rem; margin:0 0.5rem 0.75rem; font-size:0.7rem; color:var(--muted);">
       ${stops.map((code, i) => `<span style="position:absolute; left:${(i / n) * 100}%; transform:translateX(${i === 0 ? "0" : i === n ? "-100%" : "-50%"});">${code}</span>`).join("")}
@@ -830,7 +832,7 @@ function showLivePlanes() {
   const area = document.getElementById("liveMapArea");
   if (!area) return;
   area.innerHTML = `
-    <div id="map" style="padding:0.75rem; background:#e4e7ec; border-radius:8px; color:var(--muted); font-size:0.85rem;">Loading…</div>
+    <div id="map" style="padding:0.75rem; background:var(--input-bg); border:1px solid var(--border); border-radius:8px; color:var(--muted); font-size:0.85rem;">Loading…</div>
     <div id="flightList" style="margin-top:0.5rem;"></div>
     <button class="btn btn-outline" onclick="loadMap()">Refresh</button>
   `;
@@ -877,7 +879,7 @@ function renderFlightStatus() {
     <p style="margin-top:0.5rem;"><b>${manifest.length - notIn.length}/${manifest.length} passengers checked in</b></p>
     ${notIn.length
       ? `<p style="font-size:0.85rem; color:var(--muted);">Not checked in:</p>` + notIn.map(p => `
-        <div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
+        <div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between;">
           <span>${p.name}</span>
           <a href="tel:${p.phone.replace(/[^\d+]/g, "")}">${p.phone}</a>
         </div>`).join("")
@@ -972,7 +974,7 @@ function scanPass() {
     res.innerHTML = `<p style="color:var(--success); margin-top:0.5rem;">✓ Valid for ${flightNum} — ${name} (checked in)</p>`;
     if (document.getElementById("statusFlightSelect")?.value === flightNum) renderFlightStatus();
   } else {
-    res.innerHTML = `<p style="color:var(--crimson); margin-top:0.5rem;">✗ Not found or not checked in</p>`;
+    res.innerHTML = `<p style="color:var(--accent); margin-top:0.5rem;">✗ Not found or not checked in</p>`;
   }
 }
 
@@ -988,7 +990,10 @@ document.querySelector(".bottom-nav").addEventListener("click", e => {
   if (btn) goTo(btn.dataset.page);
 });
 
-document.getElementById("roleToggle").addEventListener("click", toggleRole);
+document.querySelector(".role-switch").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-role]");
+  if (btn) setRole(btn.dataset.role);
+});
 
 // Keep the run map position current without wiping the live planes list.
 setInterval(() => {
