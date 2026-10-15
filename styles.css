@@ -209,3 +209,103 @@ h3 { margin-bottom: 0.5rem; }
   font-size: 0.85rem;
   margin: 0.75rem 0;
 }
+
+/* Employee check-in scanner */
+.viewfinder {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto 0.5rem;
+  background: #111;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.viewfinder video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.viewfinder video[hidden] { display: none; }
+.vf-corner {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--accent);
+  z-index: 2;
+}
+.vf-tl { top: 16px; left: 16px; border-right: none; border-bottom: none; border-top-left-radius: 10px; }
+.vf-tr { top: 16px; right: 16px; border-left: none; border-bottom: none; border-top-right-radius: 10px; }
+.vf-bl { bottom: 16px; left: 16px; border-right: none; border-top: none; border-bottom-left-radius: 10px; }
+.vf-br { bottom: 16px; right: 16px; border-left: none; border-top: none; border-bottom-right-radius: 10px; }
+.vf-line {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 14%;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px 2px rgba(196,30,58,0.7);
+  z-index: 2;
+  animation: vf-scan 2.4s ease-in-out infinite alternate;
+}
+@keyframes vf-scan {
+  from { top: 14%; }
+  to { top: 86%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vf-line { animation: none; top: 50%; }
+}
+.vf-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22%;
+  padding: 0 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #ccc;
+  text-shadow: 0 1px 3px #000;
+  z-index: 2;
+}
+.vf-note { font-size: 0.8rem; color: var(--muted); text-align: center; margin: 0.25rem 0; }
+
+.checkin-result { text-align: center; }
+.result-icon {
+  width: 72px;
+  height: 72px;
+  margin: 0.25rem auto 0.75rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.4rem;
+  font-weight: 700;
+  color: #fff;
+}
+.result-ok { background: var(--success); }
+.result-warn { background: var(--warning); }
+.result-bad { background: var(--accent); }
+.checkin-status { font-weight: 600; margin-bottom: 0.5rem; }
+.checkin-details { text-align: left; font-size: 0.9rem; }
+.checkin-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.checkin-details span { color: var(--muted); }
+
+.recent-row {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.recent-time { font-variant-numeric: tabular-nums; color: var(--muted); }
+.recent-name { flex: 1; }
+.recent-flight { color: var(--accent); font-weight: 600; }

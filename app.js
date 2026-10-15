@@ -275,6 +275,7 @@ const NAV_TABS = {
     { page: "base", label: "Base", render: renderBase },
     { page: "runs", label: "Runs", render: renderRuns },
     { page: "runmap", label: "Map", render: renderRunMap },
+    { page: "checkin", label: "Check-in", render: renderCheckin },
     { page: "tools", label: "Tools", render: renderTools }
   ]
 };
@@ -292,6 +293,7 @@ function renderNav() {
 }
 
 function render() {
+  stopCamera(); // every page change, role switch and re-render replaces the viewfinder
   const tabs = currentTabs();
   let tab = tabs.find(t => t.page === currentPage);
   if (!tab) {
@@ -606,6 +608,7 @@ function checkIn(id) {
   trip.boardingPass = "GRANT-" + trip.flightNum + "-" + trip.id.slice(-4);
   const entry = getManifestEntryForTrip(trip);
   entry.checkedIn = true;
+  entry.checkedInAt = clockHHMM();
   entry.boardingPass = trip.boardingPass;
   saveData(state);
   showPass(id);
@@ -742,9 +745,8 @@ function renderTools(el) {
       </div>
       <div class="card">
         <h3>Scan Boarding Pass</h3>
-        <input id="scanCode" placeholder="Enter or paste boarding code">
-        <button class="btn btn-outline" onclick="scanPass()">Validate</button>
-        <div id="scanResult"></div>
+        <p style="font-size:0.85rem; color:var(--muted);">Boarding pass scanning and validation now live on the Check-in tab.</p>
+        <button class="btn btn-outline" onclick="goTo('checkin')">Scanning moved to Check-in</button>
       </div>
       <button class="btn btn-outline" onclick="setRole('passenger')">Switch to Passenger</button>
     `;
@@ -1156,39 +1158,243 @@ function postDelay() {
   render();
 }
 
-function scanPass() {
-  const code = document.getElementById("scanCode").value.trim();
-  const res = document.getElementById("scanResult");
-  let trip = code ? state.trips.find(t => t.boardingPass === code) : null;
+// ---------- Passenger check-in (employee) ----------
+
+let cameraStream = null;
+let cameraRequest = 0;   // bumped on stop so a late getUserMedia result is discarded
+let recentCheckIns = []; // this session only, newest first
+let lastCheckinResult = null;
+
+function clockHHMM(d = new Date()) {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// Look a boarding pass up in trips and manifests and check the passenger in.
+// Returns { status: "ok" | "already" | "invalid", ... } for the result card.
+function validateBoardingPass(rawCode) {
+  const code = (rawCode || "").trim();
+  if (!code) return { status: "invalid", code, reason: "Enter or scan a boarding code." };
+  let trip = state.trips.find(t => t.boardingPass === code) || null;
   let flightNum = trip ? trip.flightNum : null;
   let entry = null;
-  if (code) {
-    for (const num of Object.keys(state.flightManifests)) {
-      entry = state.flightManifests[num].find(p => p.boardingPass === code || (trip && p.tripId === trip.id));
-      if (entry) {
-        flightNum = num;
-        break;
-      }
+  for (const num of Object.keys(state.flightManifests)) {
+    entry = state.flightManifests[num].find(p => p.boardingPass === code || (trip && p.tripId === trip.id));
+    if (entry) {
+      flightNum = num;
+      break;
     }
   }
   if (!trip && entry && entry.tripId) trip = state.trips.find(t => t.id === entry.tripId) || null;
   if (trip && !entry) entry = getManifestEntryForTrip(trip);
+  if (!entry) {
+    const reason = /^GRANT-/i.test(code)
+      ? `No trip or manifest matches ${code}.`
+      : `${code} is not a Grant boarding pass code (expected GRANT-…).`;
+    return { status: "invalid", code, reason };
+  }
 
-  if (trip || entry) {
-    if (entry) {
-      entry.checkedIn = true;
-      entry.boardingPass = code;
-    }
+  const manifest = state.flightManifests[flightNum];
+  const known = getKnownFlights().find(f => f.num === flightNum);
+  const delay = state.delays[flightNum];
+  const result = {
+    code,
+    name: trip ? trip.passengerName : entry.name,
+    flightNum,
+    route: trip ? `${trip.from} → ${trip.to}` : (known ? known.route : "—"),
+    dep: trip ? getEffectiveDep(trip).time : ((delay && delay.newDepTime) || (known ? known.dep : "")),
+    paxIndex: manifest.indexOf(entry) + 1,
+    paxTotal: manifest.length
+  };
+  if (entry.checkedIn) {
+    result.status = "already";
+    result.time = entry.checkedInAt || null;
+  } else {
+    entry.checkedIn = true;
+    entry.checkedInAt = clockHHMM();
+    entry.boardingPass = code;
     if (trip) {
       trip.checkedIn = true;
       trip.boardingPass = code;
     }
     saveData(state);
-    const name = trip ? trip.passengerName : entry.name;
-    res.innerHTML = `<p style="color:var(--success); margin-top:0.5rem;">✓ Valid for ${flightNum} — ${name} (checked in)</p>`;
-    if (document.getElementById("statusFlightSelect")?.value === flightNum) renderFlightStatus();
-  } else {
-    res.innerHTML = `<p style="color:var(--accent); margin-top:0.5rem;">✗ Not found or not checked in</p>`;
+    result.status = "ok";
+    result.time = entry.checkedInAt;
+    recentCheckIns.unshift({ time: result.time, name: result.name, flightNum });
+    recentCheckIns = recentCheckIns.slice(0, 5);
+  }
+  result.checkedInCount = manifest.filter(p => p.checkedIn).length;
+  return result;
+}
+
+function renderCheckin(el) {
+  const canCamera = !!navigator.mediaDevices?.getUserMedia;
+  el.innerHTML = `
+    <h2>Passenger Check-in</h2>
+    <div class="card">
+      <div class="viewfinder" id="viewfinder">
+        <video id="cameraVideo" muted playsinline autoplay hidden></video>
+        <span class="vf-corner vf-tl"></span><span class="vf-corner vf-tr"></span>
+        <span class="vf-corner vf-bl"></span><span class="vf-corner vf-br"></span>
+        <span class="vf-line"></span>
+        <p class="vf-caption">Point camera at boarding pass QR code</p>
+      </div>
+      <p id="cameraNote" class="vf-note"${canCamera ? " hidden" : ""}>${canCamera ? "" : "Camera not available on this device — use Simulate Scan or paste the code."}</p>
+      <button class="btn" id="cameraBtn" onclick="toggleCamera()"${canCamera ? "" : " disabled"}>Use Camera</button>
+      <button class="btn btn-outline" onclick="simulateScan()">Simulate Scan</button>
+      <label for="checkinCode" style="display:block; margin-top:0.75rem; font-size:0.85rem; color:var(--muted);">Or paste boarding code</label>
+      <input id="checkinCode" placeholder="GRANT-GV5555-S01" autocomplete="off" autocapitalize="characters"
+        onkeydown="if (event.key === 'Enter') submitCheckinCode()">
+      <button class="btn btn-outline" onclick="submitCheckinCode()">Validate</button>
+    </div>
+    <div id="checkinResult"></div>
+    <div class="card">
+      <h3>Recent check-ins</h3>
+      <div id="recentCheckins"></div>
+    </div>
+  `;
+  renderCheckinResult(lastCheckinResult);
+  renderRecentCheckins();
+}
+
+function renderCheckinResult(r) {
+  lastCheckinResult = r;
+  const out = document.getElementById("checkinResult");
+  if (!out) return;
+  if (!r) {
+    out.innerHTML = "";
+    return;
+  }
+  if (r.status === "invalid") {
+    out.innerHTML = `
+      <div class="card checkin-result">
+        <div class="result-icon result-bad">✗</div>
+        <h3>Pass not found</h3>
+        <p style="font-size:0.9rem; color:var(--muted);">${escapeHtml(r.reason)}</p>
+      </div>`;
+    return;
+  }
+  const ok = r.status === "ok";
+  const statusText = ok
+    ? `Checked in${r.time ? ` at ${r.time}` : ""}`
+    : `Already checked in${r.time ? ` at ${r.time}` : ""}`;
+  out.innerHTML = `
+    <div class="card checkin-result">
+      <div class="result-icon ${ok ? "result-ok" : "result-warn"}">${ok ? "✓" : "!"}</div>
+      <h3>${escapeHtml(r.name)}</h3>
+      <p class="checkin-status" style="color:var(${ok ? "--success" : "--warning"});">${statusText}</p>
+      <div class="checkin-details">
+        <div><span>Flight</span><b>${r.flightNum}</b></div>
+        <div><span>Route</span><b>${escapeHtml(r.route)}</b></div>
+        <div><span>Departure</span><b>${r.dep || "—"}</b></div>
+        <div><span>Passenger</span><b>${r.paxIndex} of ${r.paxTotal}</b></div>
+        <div><span>Checked in</span><b>${r.checkedInCount}/${r.paxTotal}</b></div>
+      </div>
+      <p style="font-size:0.75rem; color:var(--muted); margin-top:0.5rem;">${escapeHtml(r.code)}</p>
+    </div>`;
+}
+
+function renderRecentCheckins() {
+  const out = document.getElementById("recentCheckins");
+  if (!out) return;
+  out.innerHTML = recentCheckIns.length
+    ? recentCheckIns.map(c => `
+      <div class="recent-row">
+        <span class="recent-time">${c.time}</span>
+        <span class="recent-name">${escapeHtml(c.name)}</span>
+        <span class="recent-flight">${c.flightNum}</span>
+      </div>`).join("")
+    : `<p style="font-size:0.85rem; color:var(--muted);">No check-ins yet this session.</p>`;
+}
+
+function runCheckin(code) {
+  renderCheckinResult(validateBoardingPass(code));
+  renderRecentCheckins();
+}
+
+function submitCheckinCode() {
+  const input = document.getElementById("checkinCode");
+  runCheckin(input.value);
+  input.select();
+}
+
+// Pick a random pass that exists in the mock data and is not checked in yet.
+function simulateScan() {
+  const pending = [];
+  Object.values(state.flightManifests).forEach(list => list.forEach(p => {
+    if (p.boardingPass && !p.checkedIn) pending.push(p.boardingPass);
+  }));
+  if (!pending.length) {
+    renderCheckinResult({ status: "invalid", code: "", reason: "Every passenger with a boarding pass is already checked in." });
+    return;
+  }
+  const code = pending[Math.floor(Math.random() * pending.length)];
+  document.getElementById("checkinCode").value = code;
+  runCheckin(code);
+}
+
+function setCameraNote(text) {
+  const note = document.getElementById("cameraNote");
+  if (!note) return;
+  note.textContent = text;
+  note.hidden = !text;
+}
+
+async function toggleCamera() {
+  if (cameraStream) {
+    stopCamera();
+    setCameraNote("");
+    return;
+  }
+  const btn = document.getElementById("cameraBtn");
+  const request = ++cameraRequest;
+  btn.disabled = true;
+  setCameraNote("Opening camera…");
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+  } catch (e) {
+    if (request !== cameraRequest) return;
+    btn.disabled = false;
+    const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
+    setCameraNote(denied
+      ? "Camera permission denied — use Simulate Scan or paste the code."
+      : "Couldn't open the camera — use Simulate Scan or paste the code.");
+    return;
+  }
+  const video = document.getElementById("cameraVideo");
+  // The user left the tab (or stopped) while the permission prompt was open.
+  if (request !== cameraRequest || !video) {
+    stream.getTracks().forEach(t => t.stop());
+    return;
+  }
+  cameraStream = stream;
+  video.srcObject = stream;
+  video.hidden = false;
+  video.play().catch(() => {});
+  btn.disabled = false;
+  btn.textContent = "Stop Camera";
+  setCameraNote("Live QR decoding coming later — use Simulate or paste code");
+}
+
+function stopCamera() {
+  cameraRequest++;
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  const video = document.getElementById("cameraVideo");
+  if (video) {
+    video.srcObject = null;
+    video.hidden = true;
+  }
+  const btn = document.getElementById("cameraBtn");
+  if (btn && navigator.mediaDevices?.getUserMedia) {
+    btn.textContent = "Use Camera";
+    btn.disabled = false;
   }
 }
 
