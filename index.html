@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Grant Aviation</title>
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0a2540">
+  <meta name="theme-color" content="#EC1C2C">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
@@ -27,6 +27,13 @@
     </nav>
   </div>
 
+  <script>
+    // Remove the service worker left over from the first tracker version so old cached pages stop showing.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
+      if (window.caches) caches.keys().then(ks => ks.forEach(k => caches.delete(k)));
+    }
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

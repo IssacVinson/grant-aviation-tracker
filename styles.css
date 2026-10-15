@@ -29,7 +29,7 @@ body {
 }
 
 .app-header {
-  background: var(--navy);
+  background: var(--crimson);
   color: white;
   padding: 1rem 1.25rem;
   display: flex;
@@ -73,7 +73,7 @@ body {
   border: none;
   background: none;
   font-size: 0.7rem;
-  color: var(--muted);
+  color: #4a5568;
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -81,7 +81,7 @@ body {
   gap: 0.2rem;
 }
 
-.bottom-nav button.active { color: var(--navy); font-weight: 600; }
+.bottom-nav button.active { color: var(--crimson); font-weight: 700; }
 
 .card {
   background: var(--card);
@@ -92,7 +92,7 @@ body {
 }
 
 .btn {
-  background: var(--navy);
+  background: var(--crimson);
   color: white;
   border: none;
   padding: 0.75rem 1.25rem;
@@ -106,8 +106,8 @@ body {
 .btn-crimson { background: var(--crimson); }
 .btn-outline {
   background: transparent;
-  color: var(--navy);
-  border: 1.5px solid var(--navy);
+  color: var(--crimson);
+  border: 1.5px solid var(--crimson);
 }
 
 input, select {

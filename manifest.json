@@ -3,7 +3,7 @@
   "short_name": "Grant",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#0a2540",
-  "theme_color": "#0a2540",
+  "background_color": "#EC1C2C",
+  "theme_color": "#EC1C2C",
   "icons": [{ "src": "logo.jpg", "sizes": "192x192", "type": "image/jpeg" }]
 }

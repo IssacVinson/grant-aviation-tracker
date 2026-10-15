@@ -1,24 +1,11 @@
-// Simple service worker for basic offline support
-const CACHE_NAME = 'grant-tracker-v1';
-const urlsToCache = [
-  './',
-  './index.html',
-  './styles.css',
-  './app.js',
-  './logo.jpg',
-  './manifest.json'
-];
-
-self.addEventListener('install', event => {
+// Retired: the app no longer uses a service worker. This version clears old caches and unregisters itself.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
-  );
-});
-
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => response || fetch(event.request))
+    caches.keys()
+      .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => self.registration.unregister())
+      .then(() => self.clients.matchAll())
+      .then(clients => clients.forEach(c => c.navigate(c.url)))
   );
 });

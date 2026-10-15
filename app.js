@@ -164,7 +164,7 @@ function selectFlight(index) {
   document.querySelectorAll("[id^='flight-']").forEach(el => {
     el.style.borderColor = "transparent";
   });
-  document.getElementById("flight-" + index).style.borderColor = "var(--navy)";
+  document.getElementById("flight-" + index).style.borderColor = "var(--crimson)";
 
   const btn = document.getElementById("confirmBtn");
   btn.disabled = false;
