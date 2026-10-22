@@ -9,10 +9,17 @@
   <link rel="apple-touch-icon" href="icon-192.png">
   <meta name="theme-color" content="#000000">
   <script>
-    // Apply the saved Profile "Text size" before first paint (app.js keeps it in sync afterwards).
+    // Apply the saved Profile display settings before first paint (app.js migrates and keeps them in sync afterwards).
     try {
-      var ts = localStorage.getItem('grant-aviation-text-size');
-      if (ts === 'large' || ts === 'xl') document.documentElement.dataset.textSize = ts;
+      var root = document.documentElement.dataset;
+      var ts = localStorage.getItem('grant-aviation-text-size-v2');
+      var old = localStorage.getItem('grant-aviation-text-size');
+      if (!ts && old) ts = old === 'normal' ? 'large' : 'xlarge';
+      if (ts === 'large' || ts === 'xlarge') root.textSize = ts;
+      var st = JSON.parse(localStorage.getItem('grant-aviation-settings')) || {};
+      if (st.highContrast === true) root.contrast = 'on';
+      if (st.reduceMotion === true) root.reduceMotion = 'on';
+      if (st.bigButtons === true) root.bigButtons = 'on';
     } catch (e) {}
   </script>
   <link rel="stylesheet" href="styles.css">

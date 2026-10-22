@@ -214,22 +214,75 @@ const HELP_PHONE = "(907) 555-0100";
 const HELP_PHONE_TEL = "+19075550100";
 
 // Profile "Text size" setting, kept outside the main data blob. index.html applies it before first paint too.
-const TEXT_SIZE_KEY = "grant-aviation-text-size";
+// v2 added a smaller Normal, so the old key is migrated once: old normal -> large, old large/xl -> xlarge.
+const TEXT_SIZE_KEY = "grant-aviation-text-size-v2";
+const OLD_TEXT_SIZE_KEY = "grant-aviation-text-size";
 const TEXT_SIZES = [
   { id: "normal", label: "Normal" },
   { id: "large", label: "Large" },
-  { id: "xl", label: "Extra large" }
+  { id: "xlarge", label: "Extra large" }
 ];
 
 function getTextSize() {
   let id = null;
-  try { id = localStorage.getItem(TEXT_SIZE_KEY); } catch (e) { id = null; }
+  try {
+    id = localStorage.getItem(TEXT_SIZE_KEY);
+    const old = localStorage.getItem(OLD_TEXT_SIZE_KEY);
+    if (!id && old) {
+      id = old === "normal" ? "large" : "xlarge";
+      localStorage.setItem(TEXT_SIZE_KEY, id);
+    }
+    if (old !== null) localStorage.removeItem(OLD_TEXT_SIZE_KEY);
+  } catch (e) { id = null; }
   return TEXT_SIZES.some(s => s.id === id) ? id : "normal";
 }
 
 function applyTextSize(id) {
   if (id === "normal") delete document.documentElement.dataset.textSize;
   else document.documentElement.dataset.textSize = id;
+}
+
+// Other Profile settings, also kept outside the main data blob. index.html applies the display ones before first paint.
+const SETTINGS_KEY = "grant-aviation-settings";
+const REMINDER_LEADS = [
+  { id: "1h", label: "1 hour before", ms: 3600000 },
+  { id: "3h", label: "3 hours before", ms: 3 * 3600000 },
+  { id: "1d", label: "1 day before", ms: 86400000 }
+];
+const DEFAULT_SETTINGS = { highContrast: false, reduceMotion: false, bigButtons: false, reminders: true, reminderLead: "3h", homeAirport: null };
+
+function getSettings() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch (e) { saved = null; }
+  const s = { ...DEFAULT_SETTINGS };
+  if (isPlainObject(saved)) {
+    ["highContrast", "reduceMotion", "bigButtons", "reminders"].forEach(k => { if (typeof saved[k] === "boolean") s[k] = saved[k]; });
+    if (REMINDER_LEADS.some(l => l.id === saved.reminderLead)) s.reminderLead = saved.reminderLead;
+    if (homeAirportCodes().includes(saved.homeAirport)) s.homeAirport = saved.homeAirport;
+  }
+  return s;
+}
+
+function saveSettings(s) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) { /* private mode: still applies for this visit */ }
+}
+
+function applySettings(s = getSettings()) {
+  const ds = document.documentElement.dataset;
+  const flag = (name, on) => { if (on) ds[name] = "on"; else delete ds[name]; };
+  flag("contrast", s.highContrast);
+  flag("reduceMotion", s.reduceMotion);
+  flag("bigButtons", s.bigButtons);
+}
+
+// Home airport choices: everywhere you can book from or follow on the Map. Hubs first, then villages A-Z.
+function homeAirportCodes() {
+  const codes = new Set(BOOK_AIRPORTS.map(airportCodeOf));
+  RUN_TEMPLATES.forEach(t => { codes.add(t.legs[0][0]); t.legs.forEach(l => codes.add(l[1])); });
+  const hubs = HUB_ORDER.map(airportCodeOf).filter(c => codes.has(c));
+  const villages = [...codes].filter(c => !hubs.includes(c))
+    .sort((a, b) => (AIRPORTS[a] || a).localeCompare(AIRPORTS[b] || b));
+  return [...hubs, ...villages];
 }
 
 // Simple inline line icons (no icon font or CDN). Always shown next to a text label.
@@ -242,6 +295,7 @@ const ICONS = {
   phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
   back: '<path d="M15 18l-6-6 6-6"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   base: '<path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/>',
   runs: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   checkin: '<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/>',
@@ -535,11 +589,25 @@ function nextFlightCardHtml() {
       <p class="meta">Flight ${trip.itineraryNum || trip.flightNum} · ${peopleText(trip.pax)} · Open seating</p>
       ${t.eff.changed ? `<p class="meta">New time. It was ${trip.depTime || ""} on ${fmtDateLong(trip.date)}.</p>` : ""}
       ${tripDelayNote(trip)}
+      ${status === "departed" ? "" : reminderNoteHtml(t.dep, now)}
       ${trip.checkedIn
         ? `<button class="btn" onclick="showPass('${trip.id}')">${icon("trips")}<span>Show boarding pass</span></button>`
         : `<button class="btn" onclick="checkIn('${trip.id}')">${icon("check")}<span>Check in now</span></button>`}
       <button class="btn btn-outline" onclick="goTo('trips')">${icon("trips")}<span>See all my trips${others > 0 ? ` (${state.trips.length})` : ""}</span></button>
     </section>`;
+}
+
+// Mock flight reminder from the Profile setting. Nothing is really sent in the prototype.
+function reminderNoteHtml(dep, now) {
+  const s = getSettings();
+  if (!s.reminders) return "";
+  const lead = REMINDER_LEADS.find(l => l.id === s.reminderLead);
+  const at = new Date(dep - lead.ms);
+  const when = `${fmtDateLong(localDateISO(at))} at ${clockHHMM(at)}`;
+  const text = at > now
+    ? `Reminder set: we will remind you ${lead.label} — ${when}.`
+    : `Reminder sent ${when} (${lead.label}).`;
+  return `<p class="next-reminder">${icon("bell")}<span>${text}</span></p>`;
 }
 
 function renderHome(el) {
@@ -720,8 +788,9 @@ function itineraryLegsHtml(legs, connections) {
 
 function renderBook(el) {
   selectedFlight = null;
-  // Fewer steps: start from the village picked on the Map page, if it is bookable.
-  const here = state.paxMapLocation && BOOK_AIRPORTS.find(a => airportCodeOf(a) === state.paxMapLocation) || "";
+  // Fewer steps: start from the Profile home airport, else the village picked on the Map page, if it is bookable.
+  const bookable = code => code && BOOK_AIRPORTS.find(a => airportCodeOf(a) === code);
+  const here = bookable(getSettings().homeAirport) || bookable(state.paxMapLocation) || "";
   el.innerHTML = `
     ${pageTopHtml("Book a flight")}
     <div class="card">
@@ -1003,6 +1072,12 @@ function paxRunsFor(code) {
 }
 
 function renderMap(el) {
+  // Nothing picked yet: start at the Profile home airport if any flight stops there today.
+  const home = getSettings().homeAirport;
+  if (!state.paxMapLocation && home && paxRunsFor(home).length) {
+    state.paxMapLocation = home;
+    saveData(state);
+  }
   const loc = state.paxMapLocation;
   const runs = loc ? paxRunsFor(loc) : [];
   if (runs.length && !runs.some(r => r.id === state.paxMapRun)) {
@@ -1083,8 +1158,15 @@ async function loadMap() {
   }
 }
 
-function renderProfile(el, message = "") {
+function renderProfile(el, message = "", where = "") {
   const size = getTextSize();
+  const set = getSettings();
+  const msg = id => `<div role="status" style="margin-top:0.6rem;">${message && where === id ? confirmBannerHtml(message) : ""}</div>`;
+  const toggle = (key, label, hint) => `
+    <button type="button" class="toggle" role="switch" aria-checked="${set[key]}" onclick="toggleSetting('${key}')">
+      <span><b>${label}</b><span class="meta">${hint}</span></span>
+      <span class="toggle-state">${set[key] ? "On" : "Off"}</span>
+    </button>`;
   el.innerHTML = `
     ${pageTopHtml("Profile & settings")}
     <div class="card">
@@ -1093,10 +1175,45 @@ function renderProfile(el, message = "") {
       <div class="seg" role="group" aria-label="Text size">
         ${TEXT_SIZES.map(s => `
           <button type="button" class="seg-${s.id}" aria-pressed="${s.id === size}" onclick="setTextSize('${s.id}')">
-            <span>${s.label}</span>${s.id === size ? `<span>${icon("check")}</span>` : ""}
+            <span>${s.label}${s.id === "normal" ? " (standard)" : ""}</span>${s.id === size ? `<span>${icon("check")}</span>` : ""}
           </button>`).join("")}
       </div>
-      <div id="textSizeMsg" role="status" style="margin-top:0.6rem;">${message ? confirmBannerHtml(message) : ""}</div>
+      ${msg("text")}
+    </div>
+    <div class="card">
+      <h3>Easier to see and use</h3>
+      ${toggle("highContrast", "High contrast", "Brighter words and outlines.")}
+      ${toggle("reduceMotion", "Less movement", "Stops pulsing and moving effects.")}
+      ${toggle("bigButtons", "Bigger buttons", "Makes buttons taller and easier to tap.")}
+      ${msg("display")}
+    </div>
+    <div class="card">
+      <h3>Flight reminders</h3>
+      <p class="meta">We remind you before your flight leaves.</p>
+      ${toggle("reminders", "Reminders", set.reminders ? "Reminders are turned on." : "Reminders are turned off.")}
+      ${set.reminders ? `
+        <p class="step-label" style="margin-top:0.75rem; font-weight:600;">When should we remind you?</p>
+        <div class="seg" role="group" aria-label="Reminder time">
+          ${REMINDER_LEADS.map(l => `
+            <button type="button" aria-pressed="${l.id === set.reminderLead}" onclick="setReminderLead('${l.id}')">
+              <span>${l.label}</span>${l.id === set.reminderLead ? `<span>${icon("check")}</span>` : ""}
+            </button>`).join("")}
+        </div>` : ""}
+      ${msg("reminders")}
+    </div>
+    <div class="card">
+      <label for="homeAirport" class="step-label" style="margin-top:0;">My home airport</label>
+      <p class="meta">We fill this in for you on Book and the Map.</p>
+      <select id="homeAirport" onchange="setHomeAirport(this.value)">
+        <option value=""${set.homeAirport ? "" : " selected"}>No home airport</option>
+        ${homeAirportCodes().map(c => `<option value="${c}"${c === set.homeAirport ? " selected" : ""}>${airportLabel(c)}</option>`).join("")}
+      </select>
+      ${msg("home")}
+    </div>
+    <div class="card">
+      <h3>Clock</h3>
+      <p>Times are shown on a 24-hour clock. Right now it is <b>${clockHHMM()}</b>.</p>
+      <p class="meta">For example, 2:30 in the afternoon is shown as 14:30.</p>
     </div>
     <div class="card">
       <h3>About</h3>
@@ -1110,14 +1227,54 @@ function renderProfile(el, message = "") {
   `;
 }
 
+// Re-render Profile in place with a confirmation, keeping the scroll position and the help button.
+function refreshProfile(message, where) {
+  const el = document.getElementById("content");
+  const top = el.scrollTop;
+  renderProfile(el, message, where);
+  el.insertAdjacentHTML("beforeend", helpButtonHtml());
+  el.scrollTop = top;
+}
+
 function setTextSize(id) {
   const size = TEXT_SIZES.find(s => s.id === id);
   if (!size) return;
   try { localStorage.setItem(TEXT_SIZE_KEY, id); } catch (e) { /* private mode: still applies for this visit */ }
   applyTextSize(id);
-  const el = document.getElementById("content");
-  renderProfile(el, `Text size is now ${size.label}.`);
-  el.insertAdjacentHTML("beforeend", helpButtonHtml());
+  refreshProfile(`Text size is now ${size.label}.`, "text");
+}
+
+const TOGGLE_NAMES = { highContrast: "High contrast", reduceMotion: "Less movement", bigButtons: "Bigger buttons", reminders: "Reminders" };
+
+function toggleSetting(key) {
+  if (!TOGGLE_NAMES[key]) return;
+  const s = getSettings();
+  s[key] = !s[key];
+  saveSettings(s);
+  applySettings(s);
+  refreshProfile(`${TOGGLE_NAMES[key]} is now ${s[key] ? "on" : "off"}.`, key === "reminders" ? "reminders" : "display");
+}
+
+function setReminderLead(id) {
+  const lead = REMINDER_LEADS.find(l => l.id === id);
+  if (!lead) return;
+  const s = getSettings();
+  s.reminderLead = id;
+  saveSettings(s);
+  refreshProfile(`We will remind you ${lead.label}.`, "reminders");
+}
+
+function setHomeAirport(code) {
+  const s = getSettings();
+  s.homeAirport = homeAirportCodes().includes(code) ? code : null;
+  saveSettings(s);
+  // Start the Map at the new home airport too (only if a flight stops there today).
+  if (s.homeAirport && paxRunsFor(s.homeAirport).length && state.paxMapLocation !== s.homeAirport) {
+    state.paxMapLocation = s.homeAirport;
+    state.paxMapRun = null;
+    saveData(state);
+  }
+  refreshProfile(s.homeAirport ? `Home airport is now ${airportLabel(s.homeAirport)}.` : "Home airport removed.", "home");
 }
 
 function renderTools(el) {
@@ -2300,5 +2457,6 @@ document.querySelector(".role-switch").addEventListener("click", e => {
 
 // Init
 applyTextSize(getTextSize());
+applySettings();
 renderNav();
 render();

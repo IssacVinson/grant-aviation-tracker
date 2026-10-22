@@ -1,7 +1,7 @@
-/* Root size drives every rem, so the Profile "Text size" setting scales the whole app. Normal = 18px. */
-html { font-size: 18px; }
-html[data-text-size="large"] { font-size: 21px; }
-html[data-text-size="xl"] { font-size: 24px; }
+/* Root size drives every rem, so the Profile "Text size" setting scales the whole app. Normal = 16px (default). */
+html { font-size: 16px; }
+html[data-text-size="large"] { font-size: 18px; }
+html[data-text-size="xlarge"] { font-size: 22px; }
 
 :root {
   --accent: #C41E3A;
@@ -299,9 +299,45 @@ h3 { margin-bottom: 0.5rem; font-size: 1.15rem; }
   gap: 0.5rem;
 }
 .seg button[aria-pressed="true"] { border-color: var(--accent); background: rgba(196,30,58,0.22); }
-.seg .seg-normal { font-size: 18px; }
-.seg .seg-large { font-size: 21px; }
-.seg .seg-xl { font-size: 24px; }
+.seg .seg-normal { font-size: 16px; }
+.seg .seg-large { font-size: 18px; }
+.seg .seg-xlarge { font-size: 22px; }
+
+/* Profile on/off switches: the whole row is the tap target */
+.toggle {
+  width: 100%;
+  min-height: 64px;
+  margin-top: 0.6rem;
+  padding: 0.6rem 1rem;
+  background: var(--input-bg);
+  color: #fff;
+  border: 2px solid #555;
+  border-radius: 10px;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.toggle b { display: block; }
+.toggle .meta { display: block; font-size: 0.95rem; }
+.toggle-state {
+  flex-shrink: 0;
+  min-width: 3.6rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 2px solid #777;
+  font-weight: 700;
+  text-align: center;
+}
+.toggle[aria-checked="true"] { border-color: var(--accent); background: rgba(196,30,58,0.22); }
+.toggle[aria-checked="true"] .toggle-state { background: var(--accent); border-color: var(--accent); }
+
+/* Mock flight reminder in My next flight */
+.next-reminder { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.5rem 0 0.2rem; font-weight: 600; }
+.next-reminder .icon { color: var(--accent-text); }
 
 .status-badge {
   display: inline-block;
@@ -585,3 +621,47 @@ h3 { margin-bottom: 0.5rem; font-size: 1.15rem; }
 .rm-stats-plain span { font-size: 0.9rem; text-transform: none; letter-spacing: 0; }
 .rm-stats-plain b { font-size: 1.05rem; }
 .rm-stats-plain small { font-size: 0.95rem; }
+
+/* ---------- Profile settings ---------- */
+
+/* High contrast: brighter words, outlines and inputs */
+html[data-contrast="on"] {
+  --muted: #f2f2f2;
+  --border: #bdbdbd;
+  --input-border: #fff;
+  --card: #141414;
+  --accent-text: #ffb3be;
+}
+html[data-contrast="on"] .card,
+html[data-contrast="on"] .next-times div,
+html[data-contrast="on"] .rm-stats div { border-width: 2px; }
+html[data-contrast="on"] .btn-outline,
+html[data-contrast="on"] .btn-nav,
+html[data-contrast="on"] .seg button,
+html[data-contrast="on"] .toggle { border-color: #fff; }
+html[data-contrast="on"] .bottom-nav button { color: #fff; }
+html[data-contrast="on"] .bottom-nav { border-top: 2px solid #fff; }
+html[data-contrast="on"] input::placeholder { color: #d0d0d0; }
+
+/* Less movement: switch off pulsing and pop-in effects */
+html[data-reduce-motion="on"] *,
+html[data-reduce-motion="on"] *::before,
+html[data-reduce-motion="on"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+html[data-reduce-motion="on"] .rm-pulse { opacity: 0.45; }
+html[data-reduce-motion="on"] .vf-line { top: 50%; }
+
+/* Bigger buttons: taller tap targets everywhere */
+html[data-big-buttons="on"] { --tap: 60px; }
+html[data-big-buttons="on"] .btn,
+html[data-big-buttons="on"] .btn-outline { min-height: max(64px, 3.6rem); padding: 0.85rem 1.2rem; font-size: 1.1rem; }
+html[data-big-buttons="on"] input,
+html[data-big-buttons="on"] select { min-height: max(60px, 3.4rem); }
+html[data-big-buttons="on"] .seg button { min-height: 68px; }
+html[data-big-buttons="on"] .toggle { min-height: 76px; }
+html[data-big-buttons="on"] .help-btn { min-height: 76px; }
+html[data-big-buttons="on"] .bottom-nav button { min-height: 76px; }
+html[data-big-buttons="on"] .bottom-nav .icon { width: 30px; height: 30px; }
