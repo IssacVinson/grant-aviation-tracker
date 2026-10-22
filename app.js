@@ -209,6 +209,65 @@ const RUN_TEMPLATES = [
 
 const STORAGE_KEY = "grant-aviation-data-v3";
 
+// Mock help line (fictional 555-01xx range) for the passenger "Need help?" button.
+const HELP_PHONE = "(907) 555-0100";
+const HELP_PHONE_TEL = "+19075550100";
+
+// Profile "Text size" setting, kept outside the main data blob. index.html applies it before first paint too.
+const TEXT_SIZE_KEY = "grant-aviation-text-size";
+const TEXT_SIZES = [
+  { id: "normal", label: "Normal" },
+  { id: "large", label: "Large" },
+  { id: "xl", label: "Extra large" }
+];
+
+function getTextSize() {
+  let id = null;
+  try { id = localStorage.getItem(TEXT_SIZE_KEY); } catch (e) { id = null; }
+  return TEXT_SIZES.some(s => s.id === id) ? id : "normal";
+}
+
+function applyTextSize(id) {
+  if (id === "normal") delete document.documentElement.dataset.textSize;
+  else document.documentElement.dataset.textSize = id;
+}
+
+// Simple inline line icons (no icon font or CDN). Always shown next to a text label.
+const ICONS = {
+  home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
+  book: '<path fill="currentColor" stroke="none" d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/>',
+  trips: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M15 6v12" stroke-dasharray="2 2.5"/>',
+  map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+  phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
+  back: '<path d="M15 18l-6-6 6-6"/>',
+  check: '<path d="M5 12l5 5 9-10"/>',
+  base: '<path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/>',
+  runs: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  checkin: '<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/>',
+  tools: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>'
+};
+
+function icon(name) {
+  return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICONS[name] || ""}</svg>`;
+}
+
+// Plain status words passengers see.
+const PAX_STATUS = {
+  "on-time": { label: "On time", cls: "status-on-time" },
+  delayed: { label: "Delayed", cls: "status-delayed" },
+  boarding: { label: "Boarding", cls: "status-boarding" },
+  boarded: { label: "Boarded", cls: "status-boarded" },
+  departed: { label: "Departed", cls: "status-departed" },
+  arrived: { label: "Arrived", cls: "status-arrived" }
+};
+const BOARDING_WINDOW_MIN = 30; // boarding starts this long before departure
+
+function paxStatusBadge(key) {
+  const s = PAX_STATUS[key] || PAX_STATUS["on-time"];
+  return `<span class="status-badge ${s.cls}">${s.label}</span>`;
+}
+
 function isPlainObject(v) {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
@@ -287,21 +346,22 @@ let selectedFlight = null; // selected itinerary on the Book page
 let bookItineraries = [];
 const RUNS = buildRuns();
 let selectedMapRunId = null;
+let pageHistory = []; // passenger Back button: pages visited before the current one
 
 const NAV_TABS = {
   passenger: [
-    { page: "home", label: "Home", render: renderHome },
-    { page: "book", label: "Book", render: renderBook },
-    { page: "trips", label: "Trips", render: renderTrips },
-    { page: "map", label: "Map", render: renderMap },
-    { page: "profile", label: "Profile", render: renderProfile }
+    { page: "home", label: "Home", icon: "home", render: renderHome },
+    { page: "book", label: "Book", icon: "book", render: renderBook },
+    { page: "trips", label: "My Trips", icon: "trips", render: renderTrips },
+    { page: "map", label: "Map", icon: "map", render: renderMap },
+    { page: "profile", label: "Profile", icon: "profile", render: renderProfile }
   ],
   employee: [
-    { page: "base", label: "Base", render: renderBase },
-    { page: "runs", label: "Runs", render: renderRuns },
-    { page: "runmap", label: "Map", render: renderRunMap },
-    { page: "checkin", label: "Check-in", render: renderCheckin },
-    { page: "tools", label: "Tools", render: renderTools }
+    { page: "base", label: "Base", icon: "base", render: renderBase },
+    { page: "runs", label: "Runs", icon: "runs", render: renderRuns },
+    { page: "runmap", label: "Map", icon: "map", render: renderRunMap },
+    { page: "checkin", label: "Check-in", icon: "checkin", render: renderCheckin },
+    { page: "tools", label: "Tools", icon: "tools", render: renderTools }
   ]
 };
 
@@ -313,7 +373,7 @@ function currentTabs() {
 
 function renderNav() {
   document.querySelector(".bottom-nav").innerHTML = currentTabs().map(t =>
-    `<button data-page="${t.page}"${t.page === currentPage ? ' class="active"' : ""}>${t.label}</button>`
+    `<button data-page="${t.page}"${t.page === currentPage ? ' class="active" aria-current="page"' : ""}>${icon(t.icon)}<span>${t.label}</span></button>`
   ).join("");
 }
 
@@ -328,28 +388,193 @@ function render() {
     renderNav();
   }
   syncRunMapTimer(); // refreshes renderRunProgress in place, so the live planes list is never wiped
+  syncHomeTimer();
   const role = state.employeeMode ? "employee" : "passenger";
   document.querySelectorAll(".role-switch button").forEach(b => b.classList.toggle("active", b.dataset.role === role));
-  tab.render(document.getElementById("content"));
+  const el = document.getElementById("content");
+  tab.render(el);
+  if (!state.employeeMode) el.insertAdjacentHTML("beforeend", helpButtonHtml());
+  el.scrollTop = 0;
+}
+
+// ---------- Passenger page chrome ----------
+
+// Big Back + Home buttons and the page title. back defaults to the previous page; subviews pass "render()".
+function pageTopHtml(title, back = "goBack()") {
+  return `
+    <div class="page-top">
+      <button class="btn-nav" onclick="${back}">${icon("back")}<span>Back</span></button>
+      <button class="btn-nav" onclick="goTo('home')">${icon("home")}<span>Home</span></button>
+    </div>
+    <h2>${title}</h2>`;
+}
+
+function helpButtonHtml() {
+  return `
+    <a class="help-btn" href="tel:${HELP_PHONE_TEL}">
+      ${icon("phone")}
+      <span><b>Need help? Call Grant Aviation</b><span>${HELP_PHONE}</span></span>
+    </a>`;
+}
+
+function confirmBannerHtml(text) {
+  return `<div class="confirm-banner" role="status">${icon("check")}<span>${text}</span></div>`;
+}
+
+// ---------- Passenger trip times and status ----------
+
+function dateAt(iso, hhmm) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || "") || !/^\d{1,2}:\d{2}$/.test(hhmm || "")) return null;
+  const [y, m, d] = iso.split("-").map(Number);
+  const [h, min] = hhmm.split(":").map(Number);
+  return new Date(y, m - 1, d, h, min);
+}
+
+// "Today, Thursday, October 22" — dates in words so nobody has to decode 2026-10-22.
+function fmtDateLong(iso) {
+  const d = dateAt(iso, "00:00");
+  if (!d) return iso || "";
+  const text = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((d - today) / 86400000);
+  return days === 0 ? `Today, ${text}` : days === 1 ? `Tomorrow, ${text}` : text;
+}
+
+// Effective departure and arrival as Dates (posted new times shift the whole trip), or null if the trip has no usable time.
+function tripTimes(trip) {
+  const eff = getEffectiveDep(trip);
+  const dep = dateAt(eff.date, eff.time);
+  if (!dep) return null;
+  let min = Number.isFinite(trip.totalMin) ? trip.totalMin : null;
+  if (min === null && trip.depTime && trip.arrTime) min = (toMinutes(trip.arrTime) - toMinutes(trip.depTime) + 1440) % 1440;
+  const arr = new Date(dep.getTime() + (min || 60) * 60000);
+  return { dep, arr, eff };
+}
+
+function tripStatus(trip, now = new Date()) {
+  const t = tripTimes(trip);
+  if (!t) return "on-time";
+  if (now >= t.arr) return "arrived";
+  if (now >= t.dep) return "departed";
+  if (trip.boarded) return "boarded";
+  if (t.dep - now <= BOARDING_WINDOW_MIN * 60000) return "boarding";
+  const delay = state.delays[trip.flightNum];
+  const orig = dateAt(trip.date, trip.depTime);
+  if (delay && (delay.type === "delayed" || delay.type === "hold" || (t.eff.changed && orig && t.dep > orig))) return "delayed";
+  return "on-time";
+}
+
+// Plain message for a posted delay or weather hold.
+function tripDelayNote(trip) {
+  const delay = state.delays[trip.flightNum];
+  if (!delay) return "";
+  const parts = [];
+  if (delay.type === "hold") parts.push("Weather hold — waiting for better weather.");
+  if (delay.message) parts.push(escapeHtml(delay.message));
+  return parts.length ? `<p style="color:var(--warning); font-weight:600;">${parts.join(" ")}</p>` : "";
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+// "2 hours 5 minutes", "1 day 3 hours", "45 minutes".
+function fmtCountdown(ms) {
+  const mins = Math.max(1, Math.ceil(ms / 60000));
+  const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
+  if (d) return [plural(d, "day"), h ? plural(h, "hour") : ""].filter(Boolean).join(" ");
+  return [h ? plural(h, "hour") : "", m ? plural(m, "minute") : ""].filter(Boolean).join(" ");
+}
+
+function peopleText(pax) {
+  const n = Number(pax) || 1;
+  return n === 1 ? "1 person" : `${n} people`;
+}
+
+// Soonest trip that hasn't arrived yet.
+function nextTrip(now = new Date()) {
+  return state.trips
+    .map(trip => ({ trip, t: tripTimes(trip) }))
+    .filter(x => x.t && x.t.arr > now)
+    .sort((a, b) => a.t.dep - b.t.dep)[0] || null;
+}
+
+function nextFlightCardHtml() {
+  const now = new Date();
+  const next = nextTrip(now);
+  if (!next) {
+    return `
+      <section class="card next-card" aria-labelledby="nextTitle">
+        <h3 id="nextTitle">My next flight</h3>
+        <p>You have no flights booked yet.</p>
+        <button class="btn" onclick="goTo('book')">${icon("book")}<span>Book a flight</span></button>
+      </section>`;
+  }
+  const { trip, t } = next;
+  const status = tripStatus(trip, now);
+  const countdown = {
+    departed: `Your plane has left. It lands at about ${clockHHMM(t.arr)}.`,
+    boarded: `You are on board. Leaving in ${fmtCountdown(t.dep - now)}.`,
+    boarding: `Boarding now — please go to the plane. Leaving in ${fmtCountdown(t.dep - now)}.`
+  }[status] || `Leaves in ${fmtCountdown(t.dep - now)}`;
+  const others = state.trips.length - 1;
+  return `
+    <section class="card next-card" aria-labelledby="nextTitle">
+      <div class="next-head">
+        <h3 id="nextTitle">My next flight</h3>
+        ${paxStatusBadge(status)}
+      </div>
+      <p class="next-route">${trip.from} → ${trip.to}</p>
+      <p class="meta">${fmtDateLong(t.eff.date)}</p>
+      <div class="next-times">
+        <div><span>Leaves</span><b>${clockHHMM(t.dep)}</b></div>
+        <div><span>Lands</span><b>${clockHHMM(t.arr)}</b></div>
+      </div>
+      <p class="next-countdown" id="nextCountdown" aria-live="polite">${countdown}</p>
+      <p class="meta">Flight ${trip.itineraryNum || trip.flightNum} · ${peopleText(trip.pax)} · Open seating</p>
+      ${t.eff.changed ? `<p class="meta">New time. It was ${trip.depTime || ""} on ${fmtDateLong(trip.date)}.</p>` : ""}
+      ${tripDelayNote(trip)}
+      ${trip.checkedIn
+        ? `<button class="btn" onclick="showPass('${trip.id}')">${icon("trips")}<span>Show boarding pass</span></button>`
+        : `<button class="btn" onclick="checkIn('${trip.id}')">${icon("check")}<span>Check in now</span></button>`}
+      <button class="btn btn-outline" onclick="goTo('trips')">${icon("trips")}<span>See all my trips${others > 0 ? ` (${state.trips.length})` : ""}</span></button>
+    </section>`;
 }
 
 function renderHome(el) {
   el.innerHTML = `
-    <h2>Welcome to Grant</h2>
-    <p style="color:var(--muted); margin-bottom:1rem;">Serving remote Alaska communities since 1971. No formal check-in in the villages — just show up when the plane is close.</p>
+    <h2>Welcome to Grant Aviation</h2>
+    <div id="nextFlight">${nextFlightCardHtml()}</div>
     <div class="card">
-      <h3>Quick Book</h3>
-      <p style="font-size:0.9rem; color:var(--muted);">Anchorage ↔ Kenai and dozens of villages across the Yukon-Kuskokwim Delta, Bristol Bay, and the Aleutians</p>
-      <button class="btn" onclick="goTo('book')">Book a Flight</button>
+      <h3>Book a flight</h3>
+      <p class="meta">Anchorage ↔ Kenai and dozens of villages across the Yukon-Kuskokwim Delta, Bristol Bay, and the Aleutians.</p>
+      <button class="btn" onclick="goTo('book')">${icon("book")}<span>Book a flight</span></button>
     </div>
     <div class="card">
-      <h3>Live Map</h3>
-      <p style="font-size:0.9rem;">See where Grant planes are right now.</p>
-      <button class="btn btn-outline" onclick="goTo('map')">Open Map</button>
+      <h3>Where is my plane?</h3>
+      <p class="meta">See where today's Grant planes are and when they reach your village.</p>
+      <button class="btn btn-outline" onclick="goTo('map')">${icon("map")}<span>Open the map</span></button>
     </div>
-    ${state.trips.length ? `<div class="card"><h3>Upcoming</h3><p>${state.trips.length} trip(s) in My Trips</p></div>` : ""}
+    <p class="meta" style="margin-bottom:0.75rem;">Serving remote Alaska communities since 1971. No formal check-in in the villages — just show up when the plane is close.</p>
     <div class="note">This is a prototype for design & functionality iteration. Data is stored locally in your browser. Employee mode lets staff post delays and weather holds.</div>
   `;
+}
+
+// Refresh the Home "My next flight" countdown every 30s while passenger Home is showing; called from render().
+let homeTimer = null;
+function syncHomeTimer() {
+  const on = !state.employeeMode && currentPage === "home";
+  if (!on && homeTimer) {
+    clearInterval(homeTimer);
+    homeTimer = null;
+  }
+  if (on && !homeTimer) {
+    homeTimer = setInterval(() => {
+      const box = document.getElementById("nextFlight");
+      if (box) box.innerHTML = nextFlightCardHtml();
+    }, 30000);
+  }
 }
 
 function getFlightsForRoute(from, to) {
@@ -472,15 +697,14 @@ function getItineraries(from, to) {
 }
 
 function connectionNote(c) {
-  const city = AIRPORTS[airportCodeOf(c.at)] || c.at;
   return c.type === "stay"
-    ? `Stay on plane in ${city} · ${c.layover}`
-    : `Deplane in ${city} · ${c.layover} layover`;
+    ? `Stay on the plane in ${c.at} · ${c.layover} stop`
+    : `Change planes in ${c.at} · ${c.layover} wait`;
 }
 
 function stopsText(it) {
   const n = it.connections.length;
-  return `Total ~${fmtDuration(it.totalMin)} · ${n} stop${n === 1 ? "" : "s"}`;
+  return `About ${fmtDuration(it.totalMin)} in total · ${n} stop${n === 1 ? "" : "s"}`;
 }
 
 // Leg-by-leg breakdown shared by the Book cards and My Trips.
@@ -496,86 +720,105 @@ function itineraryLegsHtml(legs, connections) {
 
 function renderBook(el) {
   selectedFlight = null;
+  // Fewer steps: start from the village picked on the Map page, if it is bookable.
+  const here = state.paxMapLocation && BOOK_AIRPORTS.find(a => airportCodeOf(a) === state.paxMapLocation) || "";
   el.innerHTML = `
-    <h2>Book a Flight</h2>
+    ${pageTopHtml("Book a flight")}
     <div class="card">
-      <label>From</label>
-      <select id="from" onchange="updateFlightList()">${airportOptions("", "Select departure")}</select>
-      <label>To</label>
-      <select id="to" onchange="updateFlightList()">${airportOptions("", "Select destination")}</select>
-      <label>Date</label>
-      <input type="date" id="date" value="${new Date().toISOString().split("T")[0]}" onchange="updateFlightList()">
-      <label>Passengers</label>
-      <input type="number" id="pax" value="1" min="1" max="9">
-      
+      <label for="from" class="step-label">1. Where are you leaving from?</label>
+      <select id="from" onchange="updateFlightList()">${airportOptions(here, "Choose a village or town")}</select>
+      <label for="to" class="step-label">2. Where are you going?</label>
+      <select id="to" onchange="updateFlightList()">${airportOptions("", "Choose a village or town")}</select>
+      <label for="date" class="step-label">3. What day?</label>
+      <input type="date" id="date" value="${localDateISO(new Date())}" min="${localDateISO(new Date())}" onchange="updateFlightList()">
+      <label for="pax" class="step-label">4. How many people are flying?</label>
+      <select id="pax">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<option value="${n}">${peopleText(n)}</option>`).join("")}</select>
+      <p class="meta" style="margin-top:0.4rem;">All Grant flights are open seating — no seat to choose.</p>
+
       <div id="flightList" style="margin-top:1rem;"></div>
-      
-      <button class="btn" id="confirmBtn" onclick="bookFlight()" disabled>Select a flight first</button>
+
+      <button class="btn" id="confirmBtn" onclick="bookFlight()" disabled>Choose a flight first</button>
     </div>
-    <p style="font-size:0.8rem; color:var(--muted);">Prototype booking — mock schedules only. No real booking while we are testing.</p>
+    <p class="fine-print">Prototype booking — mock schedules only. No real booking while we are testing.</p>
   `;
   updateFlightList();
+}
+
+function resetConfirmBtn() {
+  const btn = document.getElementById("confirmBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Choose a flight first"; }
 }
 
 function updateFlightList() {
   const from = document.getElementById("from")?.value;
   const to = document.getElementById("to")?.value;
   const listEl = document.getElementById("flightList");
-  const btn = document.getElementById("confirmBtn");
   if (!listEl) return;
+  selectedFlight = null;
+  resetConfirmBtn();
   if (!from || !to) {
-    listEl.innerHTML = `<p style="color:var(--muted);">Choose a departure and destination to see available flights.</p>`;
-    selectedFlight = null;
-    if (btn) { btn.disabled = true; btn.textContent = "Select a flight first"; }
+    listEl.innerHTML = `<p class="meta">Choose where you are leaving from and where you are going to see flights.</p>`;
     return;
   }
 
   if (from === to) {
-    listEl.innerHTML = `<p style="color:var(--muted);">Choose a different destination.</p>`;
-    selectedFlight = null;
-    if (btn) { btn.disabled = true; btn.textContent = "Select a flight first"; }
+    listEl.innerHTML = `<p class="meta">You picked the same place twice. Please choose a different destination.</p>`;
     return;
   }
 
   bookItineraries = getItineraries(from, to);
+  // A flight that has already left today can't be booked for today.
+  const date = document.getElementById("date")?.value;
+  const now = new Date();
+  const gone = it => { const d = dateAt(date, it.dep); return !!d && d <= now; };
+  const allGone = bookItineraries.length && bookItineraries.every(gone);
   listEl.innerHTML = !bookItineraries.length
-    ? `<p style="color:var(--muted);">No mock itinerary for this pair yet.</p>`
+    ? `<p class="meta">No flights for this trip in the prototype yet. Call us and we can help.</p>`
     : `
-    <label style="font-weight:600; display:block; margin-bottom:0.5rem;">Available Flights</label>
-    ${bookItineraries.map((it, i) => `
-      <div class="card itin-card" onclick="selectFlight(${i})" id="flight-${i}">
+    <p class="step-label" style="font-weight:600; margin-bottom:0.5rem;">5. Tap a flight to choose it</p>
+    ${allGone ? `<p class="meta" style="margin-bottom:0.5rem;">Today's flights on this trip have already left. Please choose another day.</p>` : ""}
+    ${bookItineraries.map((it, i) => gone(it) ? `
+      <button type="button" class="card itin-card" id="flight-${i}" disabled>
+        <div class="itin-times">Leaves ${it.dep} → Lands ${it.arr}</div>
+        <div class="meta">Flight ${it.num} · Already left today</div>
+      </button>` : `
+      <button type="button" class="card itin-card" onclick="selectFlight(${i})" id="flight-${i}" aria-pressed="false">
+        <div class="itin-times">Leaves ${it.dep} → Lands ${it.arr}</div>
         ${it.direct
-          ? `<strong>${it.num}</strong> &nbsp; ${it.dep} → ${it.arr} <span style="color:var(--muted);">(${it.legs[0].dur})</span> <span class="itin-tag">Nonstop</span>`
+          ? `<div class="meta">Flight ${it.num} · ${it.legs[0].dur} <span class="itin-tag">Nonstop</span></div>`
           : `${itineraryLegsHtml(it.legs, it.connections)}<div class="itin-total">${stopsText(it)}</div>`}
-      </div>
+        <div class="meta">Open seating</div>
+        <span class="itin-pick" id="flight-pick-${i}">Tap to choose</span>
+      </button>
     `).join("")}
   `;
-  selectedFlight = null;
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Select a flight first";
-  }
 }
 
 function selectFlight(index) {
+  const chosen = document.getElementById("flight-" + index);
+  if (!bookItineraries[index] || !chosen || chosen.disabled) return;
   selectedFlight = bookItineraries[index];
-  if (!selectedFlight) return;
 
-  document.querySelectorAll("[id^='flight-']").forEach(el => {
-    el.style.borderColor = "transparent";
+  bookItineraries.forEach((_, i) => {
+    const card = document.getElementById("flight-" + i);
+    const pick = document.getElementById("flight-pick-" + i);
+    if (!card || card.disabled) return;
+    card.classList.toggle("selected", i === index);
+    card.setAttribute("aria-pressed", String(i === index));
+    if (pick) pick.textContent = i === index ? "✓ Chosen" : "Tap to choose";
   });
-  document.getElementById("flight-" + index).style.borderColor = "var(--accent)";
 
   const btn = document.getElementById("confirmBtn");
   btn.disabled = false;
-  btn.textContent = "Confirm Booking — " + selectedFlight.num;
+  btn.textContent = `Book flight ${selectedFlight.num} at ${selectedFlight.dep}`;
+  btn.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function bookFlight() {
-  if (!selectedFlight) return alert("Please select a flight");
+  if (!selectedFlight) return alert("Please choose a flight");
   const from = document.getElementById("from").value;
   const to = document.getElementById("to").value;
-  const date = document.getElementById("date").value;
+  const date = document.getElementById("date").value || localDateISO(new Date());
   const pax = document.getElementById("pax").value;
 
   const it = selectedFlight;
@@ -593,42 +836,76 @@ function bookFlight() {
     connections: it.connections,
     status: "Scheduled",
     checkedIn: false,
+    boarded: false,
     boardingPass: null,
     passengerName: "Passenger " + Math.floor(Math.random()*100)
   };
   state.trips.push(trip);
   getManifestEntryForTrip(trip);
   saveData(state);
-  alert("Booked! " + it.num + " on " + date + " at " + trip.depTime);
-  goTo("trips");
+  // Land on My Trips with a confirmation screen; Back from here shows the trips list.
+  pageHistory.push(currentPage);
+  currentPage = "trips";
+  renderNav();
+  render();
+  showBookingConfirmation(trip.id);
+}
+
+function showBookingConfirmation(id) {
+  const trip = state.trips.find(t => t.id === id);
+  if (!trip) return;
+  const el = document.getElementById("content");
+  el.innerHTML = `
+    ${pageTopHtml("You're booked", "render()")}
+    ${confirmBannerHtml("Your flight is booked.")}
+    <div class="card pass-rows">
+      <div><span>From</span><b>${trip.from}</b></div>
+      <div><span>To</span><b>${trip.to}</b></div>
+      <div><span>Day</span><b>${fmtDateLong(trip.date)}</b></div>
+      <div><span>Leaves</span><b>${trip.depTime}</b></div>
+      <div><span>Lands</span><b>${trip.arrTime}</b></div>
+      <div><span>Flight</span><b>${trip.itineraryNum || trip.flightNum}</b></div>
+      <div><span>People</span><b>${peopleText(trip.pax)}</b></div>
+      <div><span>Seating</span><b>Open seating</b></div>
+    </div>
+    <button class="btn" onclick="checkIn('${trip.id}')">${icon("check")}<span>Check in now</span></button>
+    <button class="btn btn-outline" onclick="render()">${icon("trips")}<span>See my trips</span></button>
+    ${helpButtonHtml()}
+  `;
+  el.scrollTop = 0;
 }
 
 function renderTrips(el) {
   if (!state.trips.length) {
-    el.innerHTML = `<h2>My Trips</h2><div class="card"><p>No trips yet.</p><button class="btn" onclick="goTo('book')">Book one</button></div>`;
+    el.innerHTML = `${pageTopHtml("My trips")}<div class="card"><p>You have no trips yet.</p><button class="btn" onclick="goTo('book')">${icon("book")}<span>Book a flight</span></button></div>`;
     return;
   }
-  el.innerHTML = `<h2>My Trips</h2>` + state.trips.map(t => {
-    const delay = state.delays[t.flightNum] || { type: "on-time", message: "" };
+  // Soonest first; trips with no usable time go last.
+  const sorted = state.trips.map(t => ({ t, times: tripTimes(t) }))
+    .sort((a, b) => (a.times ? a.times.dep.getTime() : Infinity) - (b.times ? b.times.dep.getTime() : Infinity));
+  el.innerHTML = pageTopHtml("My trips") + sorted.map(({ t, times }) => {
     const eff = getEffectiveDep(t);
+    const status = tripStatus(t);
     return `
       <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong>${t.itineraryNum || t.flightNum}</strong>
-          <span class="status-badge status-${delay.type}">${delay.type.replace("-"," ")}</span>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          <strong>Flight ${t.itineraryNum || t.flightNum}</strong>
+          ${paxStatusBadge(status)}
         </div>
-        <p>${t.from} → ${t.to}</p>
-        <p style="font-size:0.85rem; color:var(--muted);">${eff.date} • ${eff.time}–${t.arrTime || ""} • ${t.pax} pax</p>
+        <p class="next-route">${t.from} → ${t.to}</p>
+        <p>${fmtDateLong(eff.date)}</p>
+        <p>Leaves <b>${eff.time}</b>${times ? ` · Lands about <b>${clockHHMM(times.arr)}</b>` : t.arrTime ? ` · Lands <b>${t.arrTime}</b>` : ""}</p>
+        <p class="meta">${peopleText(t.pax)} · Open seating</p>
         ${Array.isArray(t.legs) && t.legs.length > 1 ? `
           <div class="itin-trip">
             ${itineraryLegsHtml(t.legs, t.connections || [])}
-            <div class="itin-total">Total ~${fmtDuration(t.totalMin)} · ${t.legs.length - 1} stop${t.legs.length === 2 ? "" : "s"}</div>
+            <div class="itin-total">About ${fmtDuration(t.totalMin)} in total · ${t.legs.length - 1} stop${t.legs.length === 2 ? "" : "s"}</div>
           </div>` : ""}
-        ${eff.changed ? `<p style="font-size:0.75rem; color:var(--muted);">Originally: ${t.date} ${t.depTime || ""}</p>` : ""}
-        ${delay.message ? `<p style="color:var(--warning); font-size:0.85rem;">${delay.message}</p>` : ""}
-        ${!t.checkedIn 
-          ? `<button class="btn" onclick="checkIn('${t.id}')">Check In</button>` 
-          : `<button class="btn btn-outline" onclick="showPass('${t.id}')">Show Boarding Pass</button>`}
+        ${eff.changed ? `<p class="meta">New time. It was ${t.depTime || ""} on ${fmtDateLong(t.date)}.</p>` : ""}
+        ${tripDelayNote(t)}
+        ${!t.checkedIn
+          ? `<button class="btn" onclick="checkIn('${t.id}')">${icon("check")}<span>Check in now</span></button>`
+          : `<button class="btn btn-outline" onclick="showPass('${t.id}')">${icon("trips")}<span>Show boarding pass</span></button>`}
       </div>
     `;
   }).join("");
@@ -644,7 +921,7 @@ function checkIn(id) {
   entry.checkedInAt = clockHHMM();
   entry.boardingPass = trip.boardingPass;
   saveData(state);
-  showPass(id);
+  showPass(id, true);
 }
 
 // Find the manifest entry for a booked trip, adding one if missing (e.g. trips booked before manifests existed).
@@ -664,24 +941,36 @@ function getManifestEntryForTrip(trip) {
   return entry;
 }
 
-function showPass(id) {
+// Boarding pass subview over the current page; Back re-renders that page (My Trips or Home).
+function showPass(id, justCheckedIn = false) {
   const trip = state.trips.find(t => t.id === id);
   if (!trip || !trip.boardingPass) return;
   const eff = getEffectiveDep(trip);
   const el = document.getElementById("content");
   el.innerHTML = `
-    <h2>Boarding Pass</h2>
+    ${pageTopHtml("Boarding pass", "render()")}
+    ${justCheckedIn ? confirmBannerHtml("You are checked in. Show this pass when you board.") : ""}
     <div class="card">
-      <h3>${trip.flightNum}</h3>
-      <p>${trip.from} → ${trip.to}</p>
-      <p>${eff.date} • ${eff.time}</p>
-      <p><strong>${trip.passengerName}</strong></p>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+        <h3 style="margin:0;">${escapeHtml(trip.passengerName)}</h3>
+        ${paxStatusBadge(tripStatus(trip))}
+      </div>
+      <div class="pass-rows" style="margin-top:0.5rem;">
+        <div><span>Flight</span><b>${trip.itineraryNum || trip.flightNum}</b></div>
+        <div><span>From</span><b>${trip.from}</b></div>
+        <div><span>To</span><b>${trip.to}</b></div>
+        <div><span>Day</span><b>${fmtDateLong(eff.date)}</b></div>
+        <div><span>Leaves</span><b>${eff.time}</b></div>
+        <div><span>Seating</span><b>Open seating</b></div>
+      </div>
       <div class="qr-container" id="qr"></div>
-      <p style="text-align:center; font-size:0.8rem; color:var(--muted);">${trip.boardingPass}</p>
-      <button class="btn btn-outline" onclick="render()">Back to Trips</button>
+      <p class="meta" style="text-align:center;">${trip.boardingPass}</p>
+      <button class="btn btn-outline" onclick="render()">${icon("back")}<span>Back</span></button>
     </div>
-    <div class="note">Show this QR to the pilot or agent when boarding. In the real app this will be scannable by employees.</div>
+    <div class="note">Show this code to the pilot or agent when you board. Open seating: sit in any open seat.</div>
+    ${helpButtonHtml()}
   `;
+  el.scrollTop = 0;
   renderQrInto(document.getElementById("qr"), trip.boardingPass);
 }
 
@@ -724,19 +1013,19 @@ function renderMap(el) {
   const { hubs, villages } = paxMapLocations();
   const locOpts = codes => codes.map(c => `<option value="${c}"${c === loc ? " selected" : ""}>${airportLabel(c)}</option>`).join("");
   el.innerHTML = `
-    <h2>Flight Map</h2>
+    ${pageTopHtml("Where is my plane?")}
     <div class="card">
-      <label>I am currently in</label>
-      <select onchange="setPaxMapLocation(this.value)">
-        <option value=""${loc ? "" : " selected"} disabled>Select your location</option>
+      <label for="paxLoc" class="step-label">1. Where are you now?</label>
+      <select id="paxLoc" onchange="setPaxMapLocation(this.value)">
+        <option value=""${loc ? "" : " selected"} disabled>Choose your village or town</option>
         <optgroup label="Hubs">${locOpts(hubs)}</optgroup>
         <optgroup label="Villages">${locOpts(villages)}</optgroup>
       </select>
-      ${!loc ? `<p style="font-size:0.85rem; color:var(--muted);">Choose where you are to see today's Grant flights stopping there.</p>` : !runs.length ? `
-        <p style="font-size:0.85rem; color:var(--muted);">No Grant flights stop at ${airportLabel(loc)} today. Call 888-359-4726 for upcoming service.</p>` : `
-        <label>Flight</label>
-        <select onchange="setPaxMapRun(this.value)">
-          ${runs.map(r => `<option value="${r.id}"${r.id === state.paxMapRun ? " selected" : ""}>${runOptionText(r)}</option>`).join("")}
+      ${!loc ? `<p class="meta">Choose where you are to see today's Grant flights stopping there.</p>` : !runs.length ? `
+        <p class="meta">No Grant flights stop at ${airportLabel(loc)} today. Call ${HELP_PHONE} to ask about upcoming flights.</p>` : `
+        <label for="paxRun" class="step-label">2. Which flight?</label>
+        <select id="paxRun" onchange="setPaxMapRun(this.value)">
+          ${runs.map(r => `<option value="${r.id}"${r.id === state.paxMapRun ? " selected" : ""}>${runOptionText(r, true)}</option>`).join("")}
         </select>
         <div id="paxMapSvg" class="run-map"></div>`}
     </div>
@@ -794,19 +1083,41 @@ async function loadMap() {
   }
 }
 
-function renderProfile(el) {
+function renderProfile(el, message = "") {
+  const size = getTextSize();
   el.innerHTML = `
-    <h2>Profile</h2>
+    ${pageTopHtml("Profile & settings")}
     <div class="card">
-      <p>Passenger mode</p>
-      <button class="btn" onclick="setRole('employee')">Switch to Employee (demo)</button>
+      <h3>Text size</h3>
+      <p class="meta">Make the words on screen bigger or smaller. Your choice is saved on this phone.</p>
+      <div class="seg" role="group" aria-label="Text size">
+        ${TEXT_SIZES.map(s => `
+          <button type="button" class="seg-${s.id}" aria-pressed="${s.id === size}" onclick="setTextSize('${s.id}')">
+            <span>${s.label}</span>${s.id === size ? `<span>${icon("check")}</span>` : ""}
+          </button>`).join("")}
+      </div>
+      <div id="textSizeMsg" role="status" style="margin-top:0.6rem;">${message ? confirmBannerHtml(message) : ""}</div>
     </div>
     <div class="card">
       <h3>About</h3>
-      <p style="font-size:0.9rem;">Unofficial prototype for Grant Aviation. Destinations include Bethel hubs, Kenai, Dillingham, Dutch Harbor, Cold Bay, and dozens of villages across the Yukon-Kuskokwim Delta, Bristol Bay, and the Aleutians.</p>
-      <p style="font-size:0.85rem; margin-top:0.5rem;">Phone: 888-359-4726</p>
+      <p>Unofficial prototype for Grant Aviation. Destinations include Bethel hubs, Kenai, Dillingham, Dutch Harbor, Cold Bay, and dozens of villages across the Yukon-Kuskokwim Delta, Bristol Bay, and the Aleutians.</p>
+      <p class="meta" style="margin-top:0.5rem;">Phone (prototype number): <a class="tel-link" href="tel:${HELP_PHONE_TEL}">${HELP_PHONE}</a></p>
+    </div>
+    <div class="card">
+      <p class="meta">For Grant staff only</p>
+      <button class="btn btn-outline" onclick="setRole('employee')">Switch to Employee (demo)</button>
     </div>
   `;
+}
+
+function setTextSize(id) {
+  const size = TEXT_SIZES.find(s => s.id === id);
+  if (!size) return;
+  try { localStorage.setItem(TEXT_SIZE_KEY, id); } catch (e) { /* private mode: still applies for this visit */ }
+  applyTextSize(id);
+  const el = document.getElementById("content");
+  renderProfile(el, `Text size is now ${size.label}.`);
+  el.insertAdjacentHTML("beforeend", helpButtonHtml());
 }
 
 function renderTools(el) {
@@ -854,6 +1165,7 @@ function setRole(role) {
   if (employee === state.employeeMode) return;
   state.employeeMode = employee;
   saveData(state);
+  pageHistory = [];
   currentPage = currentTabs()[0].page;
   renderNav();
   render();
@@ -1088,11 +1400,12 @@ function renderRunMap(el) {
   renderRunProgress();
 }
 
-// "GV111 · ANC→ENA→ANC · 11:30" — first-leg departure (delay-adjusted) at the end, set off by en spaces.
-function runOptionText(run) {
+// "11:30 · GV111 · ANC→ENA→ANC". Passengers (plain) get place names: "11:30 · GV111 · Anchorage → Kenai → Anchorage".
+function runOptionText(run, plain = false) {
   const dep = adjustedLegs(run)[0].adjDep;
   // Time first so it stays visible when a narrow phone select truncates the label.
-  return `${fmtMin(dep)} · ${run.flightNum} · ${runStops(run).join("→")}`;
+  const stops = plain ? runStops(run).map(c => AIRPORTS[c] || c).join(" → ") : runStops(run).join("→");
+  return `${fmtMin(dep)} · ${run.flightNum} · ${stops}`;
 }
 
 function livePlanesCardHtml() {
@@ -1137,8 +1450,8 @@ function renderRunView(run, ids, opts = {}) {
   out.innerHTML = runInfoHtml(run, info, pos, opts);
 }
 
-// "Arrives TOG ~10:05 · Departs TOG ~10:25" for each visit to the stop, plus whether the plane has been and gone.
-function paxStopHtml(run, info, code) {
+// Each time the run arrives at or leaves the passenger's stop, plus the last one that has happened and the next one to come.
+function paxStopEvents(run, info, code) {
   const legs = info.legs;
   const n = legs.length;
   const events = [];
@@ -1148,54 +1461,85 @@ function paxStopHtml(run, info, code) {
     if (i < n) events.push({ verb: "Departs", past: "Departed", t: legs[i].adjDep });
   });
   const now = info.now;
-  const times = events.map(e => `${e.verb} ${code} ~${fmtMin(e.t)}`).join(" · ");
-  const next = events.find(e => e.t > now);
-  const prev = [...events].reverse().find(e => e.t <= now);
+  return { events, next: events.find(e => e.t > now), prev: [...events].reverse().find(e => e.t <= now) };
+}
+
+// Plain status of a run from the passenger's stop: On time / Delayed until it gets there, Boarding while it waits there, then Departed / Arrived.
+function paxRunStatus(run, info, code) {
+  const { next, prev } = paxStopEvents(run, info, code);
+  if (!next) return info.status === "Completed" ? "arrived" : "departed";
+  if (next.verb === "Departs" && ((prev && prev.verb === "Arrives") || next.t - info.now <= BOARDING_WINDOW_MIN)) return "boarding";
+  return info.delay > 0 ? "delayed" : "on-time";
+}
+
+// "Arrives at Togiak (TOG) about 10:05 · Leaves about 10:25" for each visit to the stop, plus whether the plane has been and gone.
+function paxStopHtml(run, info, code) {
+  const { events, next, prev } = paxStopEvents(run, info, code);
+  const now = info.now;
+  const place = airportLabel(code);
+  const times = events.map(e => `${e.verb === "Arrives" ? "Arrives" : "Leaves"} about <b>${fmtMin(e.t)}</b>`).join(" · ");
   let note;
-  if (!next) note = `<span style="color:var(--muted);">✓ Already passed ${code} — ${prev.past.toLowerCase()} ~${fmtMin(prev.t)}</span>`;
-  else if (prev && prev.verb === "Arrives" && next.verb === "Departs") note = `<span style="color:var(--success); font-weight:600;">On the ground at ${code} now</span>`;
-  else note = `<span style="color:var(--accent); font-weight:600;">${next.verb === "Arrives" ? "Arriving" : "Departing"} in ${fmtDuration(Math.max(1, Math.round(next.t - now)))}</span>`;
-  const delayNote = info.delay > 0 && next ? ` <span style="color:var(--muted);">(includes +${info.delay} min delay)</span>` : "";
+  if (!next) note = `<span class="meta">✓ The plane has already left ${place}. It ${prev.verb === "Arrives" ? "arrived" : "left"} at about ${fmtMin(prev.t)}.</span>`;
+  else if (prev && prev.verb === "Arrives" && next.verb === "Departs") note = `<span style="color:#4ade80; font-weight:700;">The plane is on the ground at ${place} now.</span>`;
+  else note = `<span style="color:var(--accent-text); font-weight:700;">${next.verb === "Arrives" ? "Gets here" : "Leaves"} in ${fmtCountdown((next.t - now) * 60000)}</span>`;
+  const delayNote = info.delay > 0 && next ? ` <span class="meta">(running ${info.delay} minutes late)</span>` : "";
   return `
-    <div style="margin-top:0.75rem; padding:0.6rem 0.75rem; border:1px solid var(--accent); border-radius:8px; font-size:0.85rem;">
-      <div style="font-weight:600;">${airportLabel(code)} · You are here</div>
+    <div style="margin-top:0.75rem; padding:0.75rem; border:2px solid var(--accent); border-radius:10px;">
+      <div style="font-weight:700;">You are here: ${place}</div>
       <div style="font-variant-numeric:tabular-nums;">${times}</div>
       <div>${note}${delayNote}</div>
     </div>`;
 }
 
+// opts.highlight (passenger map) switches to plain words and place names next to every code.
 function runInfoHtml(run, info, pos, opts) {
+  const plain = !!opts.highlight;
   const legs = info.legs;
   const stops = runStops(run);
   const pct = runPosition(legs, info.now) * 100;
   const n = legs.length;
   const leg = legs[pos.leg];
-  const legText = l => `${l.from} → ${l.to}`;
-  const stats = {
+  const place = c => plain ? airportLabel(c) : c;
+  const legText = l => `${place(l.from)} → ${place(l.to)}`;
+  const stats = plain ? {
+    pre: [["Next flight", legText(leg), "Leaves " + fmtMin(leg.adjDep)], ["Next stop", place(leg.to), "Lands about " + fmtMin(leg.adjArr)]],
+    air: [["Flying now", legText(leg), "In the air"], ["Next stop", place(leg.to), "Lands about " + fmtMin(leg.adjArr)]],
+    ground: [["On the ground at", place(leg.from), `Leaves ${fmtMin(leg.adjDep)} for ${place(leg.to)}`], ["Next stop", place(leg.to), "Lands about " + fmtMin(leg.adjArr)]],
+    done: [["Last flight", legText(leg), "Finished"], ["Landed", place(leg.to), "at " + fmtMin(leg.adjArr)]]
+  }[pos.phase] : {
     pre: [["Next leg", legText(leg), "dep " + fmtMin(leg.adjDep)], ["ETA next stop", `${leg.to} ${fmtMin(leg.adjArr)}`]],
     air: [["Current leg", legText(leg), "Airborne"], ["ETA next stop", `${leg.to} ${fmtMin(leg.adjArr)}`]],
     ground: [["On ground", leg.from, `next ${legText(leg)} dep ${fmtMin(leg.adjDep)}`], ["ETA next stop", `${leg.to} ${fmtMin(leg.adjArr)}`]],
     done: [["Last leg", legText(leg), "Completed"], ["Arrived", `${leg.to} ${fmtMin(leg.adjArr)}`]]
   }[pos.phase];
-  stats.push(["Complete", `${Math.round(pct)}%`], ["Updated", fmtMin(info.now)]);
+  stats.push(plain ? ["Trip done", `${Math.round(pct)}%`] : ["Complete", `${Math.round(pct)}%`], [plain ? "Last updated" : "Updated", fmtMin(info.now)]);
   const stopRows = stops.map((code, i) => {
     const arr = i > 0 ? legs[i - 1].adjArr : null;
     const dep = i < n ? legs[i].adjDep : null;
     const passed = i < n ? info.now >= dep : info.now >= arr;
     const mine = code === opts.highlight;
+    const [arrWord, depWord] = plain ? ["Arrives ", "Leaves "] : ["arr ", "dep "];
     return `
-      <div style="font-size:0.85rem; padding:0.4rem 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:0.5rem;">
-        <span${mine ? ' style="font-weight:700;"' : ""}><span style="display:inline-block; width:1.2rem; color:var(--success); font-weight:700;">${passed ? "✓" : ""}</span>${airportLabel(code)}${mine ? ` <span style="color:var(--accent); font-size:0.75rem;">● You</span>` : ""}</span>
-        <span style="color:var(--muted); text-align:right;">${arr !== null ? "arr " + fmtMin(arr) : ""}${arr !== null && dep !== null ? " · " : ""}${dep !== null ? "dep " + fmtMin(dep) : ""}</span>
+      <div style="font-size:${plain ? "1rem" : "0.85rem"}; padding:0.4rem 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:0.5rem;">
+        <span${mine ? ' style="font-weight:700;"' : ""}><span style="display:inline-block; width:1.2rem; color:var(--success); font-weight:700;">${passed ? "✓" : ""}</span>${airportLabel(code)}${mine ? ` <span style="color:var(--accent-text); font-size:0.9em;">● You</span>` : ""}</span>
+        <span style="color:var(--muted); text-align:right;">${arr !== null ? arrWord + fmtMin(arr) : ""}${arr !== null && dep !== null ? " · " : ""}${dep !== null ? depWord + fmtMin(dep) : ""}</span>
       </div>`;
   }).join("");
+  // Passenger labels under the bar use place names on two staggered rows so neighbours don't collide.
+  const barLabels = plain
+    ? `<div style="position:relative; height:2.8rem; margin:0 0.5rem 0.75rem; font-size:0.9rem; color:var(--muted);">
+        ${stops.map((code, i) => `<span style="position:absolute; top:${i % 2 ? "1.3rem" : "0"}; left:${(i / n) * 100}%; white-space:nowrap; transform:translateX(${i === 0 ? "0" : i === n ? "-100%" : "-50%"});">${AIRPORTS[code] || code}</span>`).join("")}
+      </div>`
+    : `<div style="position:relative; height:1.2rem; margin:0 0.5rem 0.75rem; font-size:0.7rem; color:var(--muted);">
+        ${stops.map((code, i) => `<span style="position:absolute; left:${(i / n) * 100}%; transform:translateX(${i === 0 ? "0" : i === n ? "-100%" : "-50%"});">${code}</span>`).join("")}
+      </div>`;
   return `
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
-      <span style="font-size:0.85rem;"><strong>${run.flightNum}</strong> · ${run.aircraft}</span>
-      <span>${statusBadges(info)}</span>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+      <span style="font-size:${plain ? "1rem" : "0.85rem"};"><strong>${plain ? "Flight " : ""}${run.flightNum}</strong> · ${run.aircraft}</span>
+      <span>${plain ? paxStatusBadge(paxRunStatus(run, info, opts.highlight)) : statusBadges(info)}</span>
     </div>
-    ${opts.highlight ? paxStopHtml(run, info, opts.highlight) : ""}
-    <div class="rm-stats">
+    ${plain ? paxStopHtml(run, info, opts.highlight) : ""}
+    <div class="rm-stats${plain ? " rm-stats-plain" : ""}">
       ${stats.map(([label, value, sub]) => `
         <div><span>${label}</span><b>${value}</b>${sub ? `<small>${sub}</small>` : ""}</div>`).join("")}
     </div>
@@ -1204,9 +1548,7 @@ function runInfoHtml(run, info, pos, opts) {
       ${stops.map((_, i) => `<div style="position:absolute; left:${(i / n) * 100}%; top:-3px; width:2px; height:18px; margin-left:-1px; background:var(--muted);"></div>`).join("")}
       <div style="position:absolute; left:${pct}%; top:50%; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:var(--text); border:3px solid var(--bg); box-shadow:0 0 0 1px var(--muted), 0 1px 3px rgba(0,0,0,0.6);"></div>
     </div>
-    <div style="position:relative; height:1.2rem; margin:0 0.5rem 0.75rem; font-size:0.7rem; color:var(--muted);">
-      ${stops.map((code, i) => `<span style="position:absolute; left:${(i / n) * 100}%; transform:translateX(${i === 0 ? "0" : i === n ? "-100%" : "-50%"});">${code}</span>`).join("")}
-    </div>
+    ${barLabels}
     ${stopRows}
   `;
 }
@@ -1326,27 +1668,6 @@ function runMapSvgHtml(run, info, pos, opts = {}) {
     entry.passed = entry.passed || passed;
     byCode.set(code, entry);
   });
-  // Greedy label placement: try above, below, then further out, skipping spots that overlap placed labels.
-  const placed = [];
-  const overlaps = r => placed.some(p => r.x < p.x + p.w && p.x < r.x + r.w && r.y < p.y + p.h && p.y < r.y + r.h);
-  let stopsSvg = "";
-  // The passenger's stop is placed first so it gets the best label spot; its label has a second "You are here" line.
-  const stopList = [...byCode.values()].sort((a, b) => (b.code === opts.highlight) - (a.code === opts.highlight));
-  stopList.forEach(st => {
-    const mine = st.code === opts.highlight;
-    const text = `${st.code} ${st.times.join(" / ")}`;
-    const w = Math.max(text.length, mine ? 12 : 0) * 5.8 + 4;
-    const lx = Math.min(Math.max(st.pt[0], w / 2 + 4), W - w / 2 - 4);
-    const tries = (mine ? [-26, 24, -40, 38] : [-11, 20, -25, 34]).map(dy => ({ x: lx - w / 2, y: st.pt[1] + dy - 10, w, h: mine ? 24 : 13, dy }));
-    const spot = tries.find(r => r.y > 2 && r.y + r.h < H - 2 && !overlaps(r)) || tries[0];
-    placed.push(spot);
-    const cxy = `cx="${st.pt[0].toFixed(1)}" cy="${st.pt[1].toFixed(1)}"`;
-    stopsSvg += `${mine ? `<circle class="rm-you-ring" ${cxy} r="11"/>` : ""}
-      <circle class="${st.passed ? "rm-stop-done" : "rm-stop"}" ${cxy} r="${mine ? 6.5 : st.code === stops[0] ? 6 : 5}"/>
-      <text class="rm-label" x="${lx.toFixed(1)}" y="${(st.pt[1] + spot.dy).toFixed(1)}" text-anchor="middle"><tspan class="rm-code">${st.code}</tspan> <tspan class="${st.delayed ? "rm-time-late" : "rm-time"}">${st.times.join(" / ")}</tspan></text>
-      ${mine ? `<text class="rm-label rm-you" x="${lx.toFixed(1)}" y="${(st.pt[1] + spot.dy + 11).toFixed(1)}" text-anchor="middle">YOU ARE HERE</text>` : ""}`;
-  });
-
   // Plane: at the origin before departure, on the curve when airborne, at the stop on the ground.
   const cur = curves[pos.leg];
   const at = pos.phase === "air" ? curvePoint(cur, pos.t) : pos.phase === "done" ? cur[2] : cur[0];
@@ -1357,12 +1678,65 @@ function runMapSvgHtml(run, info, pos, opts = {}) {
       <path class="rm-plane" transform="rotate(${heading.toFixed(0)}) scale(1.15)"
         d="M0,-11 C1.2,-11 1.7,-9.6 1.7,-8 L1.7,-3 L10,2 L10,4.4 L1.7,1.8 L1.7,6.8 L4.4,9 L4.4,10.8 L0,9.6 L-4.4,10.8 L-4.4,9 L-1.7,6.8 L-1.7,1.8 L-10,4.4 L-10,2 L-1.7,-3 L-1.7,-8 C-1.7,-9.6 -1.2,-11 0,-11 Z"/>
     </g>`;
+
+  // Labels: "Bethel (BET)" over the times, plus "YOU ARE HERE" for the passenger's stop.
+  // The plane icon (radius ~13.5 at any heading) is a hard obstacle — a label is never placed over it.
+  // Stop markers and labels already placed are avoided when possible. Candidates start right next to the
+  // stop and move outwards; a vertical sweep across the whole map guarantees a spot clear of the plane.
+  const PLANE_R = 17;
+  const planeBox = { x: at[0] - PLANE_R, y: at[1] - PLANE_R, w: 2 * PLANE_R, h: 2 * PLANE_R };
+  const hit = (r, p) => r.x < p.x + p.w && p.x < r.x + r.w && r.y < p.y + p.h && p.y < r.y + r.h;
+  const inMap = r => r.y >= 2 && r.y + r.h <= H - 2;
+  const stopBoxes = [...byCode.values()].map(st => {
+    const r = st.code === opts.highlight ? 13 : 8;
+    return { x: st.pt[0] - r, y: st.pt[1] - r, w: 2 * r, h: 2 * r };
+  });
+  const region = MAP_REGIONS[run.base] || "Alaska";
+  const regionText = `${region.toUpperCase()} · AK`;
+  const regionW = regionText.length * 7.6;
+  stopBoxes.push({ x: W - 8 - regionW, y: 6, w: regionW, h: 16 }, { x: W - 24, y: 28, w: 20, h: 26 }); // region caption, north arrow
+  const LINE = 14;
+  const placed = [];
+  let stopsSvg = "", leaders = "";
+  // The passenger's stop is placed first so it gets the best label spot.
+  const stopList = [...byCode.values()].sort((a, b) => (b.code === opts.highlight) - (a.code === opts.highlight));
+  stopList.forEach(st => {
+    const mine = st.code === opts.highlight;
+    const name = airportLabel(st.code);
+    const times = st.times.join(" / ");
+    // Generous width estimate for 12px text (bold name ~7.4px/char, times ~6.9px/char).
+    const w = Math.ceil(Math.max(name.length * 7.4, times.length * 6.9, mine ? 12 * 6.6 : 0)) + 8;
+    const h = (mine ? 3 : 2) * LINE + 4;
+    const [px, py] = st.pt;
+    const box = (cx, cy) => ({ x: Math.min(Math.max(cx - w / 2, 2), W - 2 - w), y: cy - h / 2, w, h });
+    const cands = [];
+    [8, 20, 34, 50].forEach(g => cands.push(
+      box(px, py - g - h / 2), box(px, py + g + h / 2), box(px + g + w / 2, py), box(px - g - w / 2, py)
+    ));
+    for (let dy = 6; dy <= H; dy += 6) cands.push(box(px, py - dy), box(px, py + dy));
+    const clearOfPlane = cands.filter(r => inMap(r) && !hit(r, planeBox));
+    const spot = clearOfPlane.find(r => ![...placed, ...stopBoxes].some(p => hit(r, p)))
+      || clearOfPlane.find(r => !placed.some(p => hit(r, p)))
+      || clearOfPlane[0];
+    placed.push(spot);
+    const lx = (spot.x + w / 2).toFixed(1);
+    // Labels pushed away from their stop get a faint leader line back to it.
+    const nx = Math.min(Math.max(px, spot.x), spot.x + w), ny = Math.min(Math.max(py, spot.y), spot.y + h);
+    if (Math.hypot(nx - px, ny - py) > 24) leaders += `<line class="rm-leader" x1="${px.toFixed(1)}" y1="${py.toFixed(1)}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}"/>`;
+    const cxy = `cx="${px.toFixed(1)}" cy="${py.toFixed(1)}"`;
+    const base = spot.y + 2;
+    stopsSvg += `${mine ? `<circle class="rm-you-ring" ${cxy} r="11"/>` : ""}
+      <circle class="${st.passed ? "rm-stop-done" : "rm-stop"}" ${cxy} r="${mine ? 6.5 : st.code === stops[0] ? 6 : 5}"/>
+      <text class="rm-label rm-code" x="${lx}" y="${(base + 11).toFixed(1)}" text-anchor="middle">${name}</text>
+      <text class="rm-label ${st.delayed ? "rm-time-late" : "rm-time"}" x="${lx}" y="${(base + LINE + 11).toFixed(1)}" text-anchor="middle">${times}</text>
+      ${mine ? `<text class="rm-label rm-you" x="${lx}" y="${(base + 2 * LINE + 10).toFixed(1)}" text-anchor="middle">YOU ARE HERE</text>` : ""}`;
+  });
+
   const where = { pre: `at ${stops[0]}, departs ${fmtMin(legs[0].adjDep)}`, air: `airborne ${legs[pos.leg].from} to ${legs[pos.leg].to}`,
     ground: `on the ground at ${legs[pos.leg].from}`, done: `completed at ${stops[stops.length - 1]}` }[pos.phase];
-  const region = MAP_REGIONS[run.base] || "Alaska";
 
   return `
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${run.flightNum} route ${stops.join(" to ")}; plane ${where}">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${run.flightNum} route ${stops.map(airportLabel).join(" to ")}; plane ${where}">
       <defs>
         <filter id="rmGlow" x="-20%" y="-20%" width="140%" height="140%">
           <feGaussianBlur stdDeviation="2.5" result="b"/>
@@ -1371,15 +1745,16 @@ function runMapSvgHtml(run, info, pos, opts = {}) {
       </defs>
       <rect width="${W}" height="${H}" fill="#0f1620"/>
       <g class="rm-grid">${grid}</g>
-      <text class="rm-region" x="${W - 8}" y="18" text-anchor="end">${region.toUpperCase()} · AK</text>
+      <text class="rm-region" x="${W - 8}" y="18" text-anchor="end">${regionText}</text>
       <text class="rm-north" x="${W - 14}" y="38" text-anchor="middle">N</text>
       <path class="rm-north-arrow" d="M${W - 14} 42 l-4 9 l4 -2.5 l4 2.5 Z"/>
       <path class="rm-ahead" d="${ahead}"/>
       <path class="rm-flown" d="${behind}" filter="url(#rmGlow)"/>
+      ${leaders}
       ${stopsSvg}
       ${plane}
     </svg>
-    ${pos.phase === "done" ? `<div class="rm-banner">Completed</div>` : ""}`;
+    ${pos.phase === "done" ? `<div class="rm-banner">${opts.highlight ? "Landed" : "Completed"}</div>` : ""}`;
 }
 
 // Refresh the route map every 30s only while the employee Run Map or passenger Map tab is showing; called from render().
@@ -1670,6 +2045,11 @@ function validateBoardingPass(rawCode, flight) {
     result.booked = passBookingText(trip, flightNum);
     return result;
   }
+  // A pass scanned at the plane means the passenger has boarded (their trip shows "Boarded").
+  if (trip && !trip.boarded) {
+    trip.boarded = true;
+    saveData(state);
+  }
   if (entry.checkedIn) {
     result.status = "already";
     result.time = entry.checkedInAt || null;
@@ -1884,7 +2264,21 @@ function stopCamera() {
 }
 
 function goTo(page) {
+  if (page !== currentPage) pageHistory = [...pageHistory, currentPage].slice(-20);
   currentPage = page;
+  renderNav();
+  render();
+}
+
+// Back to the previous page in this mode, or Home when there is nothing to go back to.
+function goBack() {
+  const pages = currentTabs().map(t => t.page);
+  let page = null;
+  while (pageHistory.length && !page) {
+    const p = pageHistory.pop();
+    if (pages.includes(p) && p !== currentPage) page = p;
+  }
+  currentPage = page || pages[0];
   renderNav();
   render();
 }
@@ -1905,5 +2299,6 @@ document.querySelector(".role-switch").addEventListener("click", e => {
 });
 
 // Init
+applyTextSize(getTextSize());
 renderNav();
 render();
