@@ -466,6 +466,8 @@ let bookItineraries = [];
 let bookPlan = null; // Book page steps when a partner airline flies part of the trip
 const RUNS = buildRuns();
 let selectedMapRunId = null;
+let runFilterFrom = ""; // Runs page From/To filter ("" = any)
+let runFilterTo = "";
 let pageHistory = []; // passenger Back button: pages visited before the current one
 
 const NAV_TABS = {
@@ -1729,12 +1731,53 @@ function renderBase(el) {
   `;
 }
 
+// A run matches when one of its legs leaves From and the same or a later leg lands at To.
+function runMatchesFilter(run, from, to) {
+  const start = from ? run.legs.findIndex(l => l.from === from) : 0;
+  if (start === -1) return false;
+  return !to || run.legs.slice(start).some(l => l.to === to);
+}
+
+function setRunFilter(which, code) {
+  if (which === "from") runFilterFrom = code;
+  else runFilterTo = code;
+  render();
+}
+
+function clearRunFilter() {
+  runFilterFrom = "";
+  runFilterTo = "";
+  render();
+}
+
+function runFilterHtml(runs, shown) {
+  const codes = [...new Set(runs.flatMap(runStops))].sort((a, b) => (AIRPORTS[a] || a).localeCompare(AIRPORTS[b] || b));
+  const options = (placeholder, selected) => `<option value="">${placeholder}</option>` +
+    codes.map(c => `<option value="${c}"${c === selected ? " selected" : ""}>${airportLabel(c)}</option>`).join("");
+  const filtered = runFilterFrom || runFilterTo;
+  return `
+    <div class="card">
+      <h3>Find a flight</h3>
+      <label for="runFilterFrom">From</label>
+      <select id="runFilterFrom" onchange="setRunFilter('from', this.value)">${options("Any departure", runFilterFrom)}</select>
+      <label for="runFilterTo">To</label>
+      <select id="runFilterTo" onchange="setRunFilter('to', this.value)">${options("Any arrival", runFilterTo)}</select>
+      <p style="font-size:1.05rem; font-weight:700; margin-top:0.5rem;">${shown} matching flight${shown === 1 ? "" : "s"}</p>
+      ${filtered ? `<button class="btn btn-outline" onclick="clearRunFilter()">Show all</button>` : ""}
+    </div>`;
+}
+
 function renderRuns(el) {
   const base = state.employeeBase;
   const runs = runsForBase(base);
+  // Drop a chosen airport that no run at this base stops at (e.g. after changing base).
+  const stops = new Set(runs.flatMap(runStops));
+  if (!stops.has(runFilterFrom)) runFilterFrom = "";
+  if (!stops.has(runFilterTo)) runFilterTo = "";
+  const shown = runs.filter(r => runMatchesFilter(r, runFilterFrom, runFilterTo));
   el.innerHTML = `
     <h2>Runs · ${base}</h2>
-    ${runs.length ? runs.map(runCardHtml).join("") : `<div class="card"><p>No runs touch ${airportLabel(base)} today.</p><button class="btn btn-outline" onclick="goTo('base')">Change base</button></div>`}
+    ${runs.length ? runFilterHtml(runs, shown.length) + (shown.length ? shown.map(runCardHtml).join("") : `<div class="card"><p>No flights match. Try another airport or tap Show all.</p></div>`) : `<div class="card"><p>No runs touch ${airportLabel(base)} today.</p><button class="btn btn-outline" onclick="goTo('base')">Change base</button></div>`}
   `;
 }
 
