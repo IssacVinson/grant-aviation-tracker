@@ -468,6 +468,8 @@ const RUNS = buildRuns();
 let selectedMapRunId = null;
 let runFilterFrom = ""; // Runs page From/To filter ("" = any)
 let runFilterTo = "";
+let delayFilterFrom = ""; // Tools page Post Delay From/To filter ("" = any)
+let delayFilterTo = "";
 let pageHistory = []; // passenger Back button: pages visited before the current one
 
 const NAV_TABS = {
@@ -1526,10 +1528,7 @@ function renderTools(el) {
       </div>
       <div class="card">
         <h3>Post Delay / Weather Hold</h3>
-        <select id="delayFlightSelect" onchange="updateCurrentDep()">
-          <option value="">Select a flight</option>
-          ${getKnownFlights().map(f => `<option value="${f.num}">${flightOptionText(f)}</option>`).join("")}
-        </select>
+        <div id="delayFilter">${delayFilterHtml()}</div>
         <p id="currentDep" style="font-size:0.85rem; color:var(--muted);"></p>
         <label>New Departure Time</label>
         <input type="text" id="newDepTime" placeholder="HH:MM (24-hour, e.g. 13:40)" inputmode="numeric" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]">
@@ -2222,13 +2221,14 @@ function getKnownFlights() {
   const byNum = new Map();
   Object.keys(MOCK_FLIGHTS).forEach(key => {
     const route = key.split("-").join(" → ");
+    const [from, to] = key.split("-").map(airportCodeOf);
     MOCK_FLIGHTS[key].forEach(f => {
-      if (!byNum.has(f.num)) byNum.set(f.num, { num: f.num, route, dep: f.dep });
+      if (!byNum.has(f.num)) byNum.set(f.num, { num: f.num, route, dep: f.dep, from, to });
     });
   });
   state.trips.forEach(t => {
     if (!t.flightNum || byNum.has(t.flightNum)) return;
-    byNum.set(t.flightNum, { num: t.flightNum, route: `${t.from} → ${t.to}`, dep: t.depTime || "" });
+    byNum.set(t.flightNum, { num: t.flightNum, route: `${t.from} → ${t.to}`, dep: t.depTime || "", from: airportCodeOf(t.from), to: airportCodeOf(t.to) });
   });
   return [...byNum.values()];
 }
@@ -2272,6 +2272,52 @@ function flightOptionText(f) {
     text += ` · now ${[delay.newDepDate, delay.newDepTime].filter(Boolean).join(" ")}`;
   }
   return text;
+}
+
+// Post Delay From/To filter. Updates the card in place so typed times and messages are kept.
+function delayFilterHtml() {
+  const flights = getKnownFlights();
+  const codes = [...new Set(flights.flatMap(f => [f.from, f.to]).filter(Boolean))].sort((a, b) => (AIRPORTS[a] || a).localeCompare(AIRPORTS[b] || b));
+  if (!codes.includes(delayFilterFrom)) delayFilterFrom = "";
+  if (!codes.includes(delayFilterTo)) delayFilterTo = "";
+  const options = (placeholder, selected) => `<option value="">${placeholder}</option>` +
+    codes.map(c => `<option value="${c}"${c === selected ? " selected" : ""}>${airportLabel(c)}</option>`).join("");
+  const shown = flights.filter(f => (!delayFilterFrom || f.from === delayFilterFrom) && (!delayFilterTo || f.to === delayFilterTo));
+  const filtered = delayFilterFrom || delayFilterTo;
+  return `
+    <label for="delayFilterFrom">From</label>
+    <select id="delayFilterFrom" onchange="setDelayFilter('from', this.value)">${options("Any departure", delayFilterFrom)}</select>
+    <label for="delayFilterTo">To</label>
+    <select id="delayFilterTo" onchange="setDelayFilter('to', this.value)">${options("Any arrival", delayFilterTo)}</select>
+    <p style="font-size:1.05rem; font-weight:700; margin-top:0.5rem;">${shown.length} matching flight${shown.length === 1 ? "" : "s"}</p>
+    ${filtered ? `<button class="btn btn-outline" onclick="clearDelayFilter()">Show all</button>` : ""}
+    <select id="delayFlightSelect" onchange="updateCurrentDep()">
+      <option value="">${shown.length ? "Select a flight" : "No flights match"}</option>
+      ${shown.map(f => `<option value="${f.num}">${flightOptionText(f)}</option>`).join("")}
+    </select>`;
+}
+
+function refreshDelayFilter() {
+  const box = document.getElementById("delayFilter");
+  if (!box) return;
+  const prev = document.getElementById("delayFlightSelect").value;
+  box.innerHTML = delayFilterHtml();
+  // Keep the chosen flight if it still matches.
+  const select = document.getElementById("delayFlightSelect");
+  if ([...select.options].some(o => o.value === prev)) select.value = prev;
+  updateCurrentDep();
+}
+
+function setDelayFilter(which, code) {
+  if (which === "from") delayFilterFrom = code;
+  else delayFilterTo = code;
+  refreshDelayFilter();
+}
+
+function clearDelayFilter() {
+  delayFilterFrom = "";
+  delayFilterTo = "";
+  refreshDelayFilter();
 }
 
 function updateCurrentDep() {
