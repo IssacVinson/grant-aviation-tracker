@@ -6,11 +6,12 @@ const AIRPORTS = {
   ANC: "Anchorage", ENA: "Kenai", BET: "Bethel", DLG: "Dillingham", AKN: "King Salmon",
   CDB: "Cold Bay", DUT: "Dutch Harbor", EMK: "Emmonak",
   // Bethel
-  VAK: "Chevak", HPB: "Hooper Bay", SCM: "Scammon Bay", WWT: "Mertarvik", NME: "Nightmute",
+  VAK: "Chevak", HPB: "Hooper Bay", SCM: "Scammon Bay", EWU: "Mertarvik", WWT: "Newtok", NME: "Nightmute",
   OOK: "Toksook Bay", TNK: "Tununak", MYU: "Mekoryuk", CYF: "Chefornak", KPN: "Kipnuk",
   KKH: "Kongiganak", KWK: "Kwigillingok", WTL: "Tuntutuliak", KWN: "Quinhagak", EEK: "Eek",
   KOT: "Kotlik", SXP: "Nunam Iqua", AUK: "Alakanuk", ATT: "Atmautluak", NUP: "Nunapitchuk",
   KUK: "Kasigluk", MLL: "Marshall", PQS: "Pilot Station", KSM: "St Mary's", MOU: "Mountain Village",
+  KKI: "Akiachak", KWT: "Kwethluk",
   // Cold Bay
   KVC: "King Cove", KFP: "False Pass", NLG: "Nelson Lagoon", PML: "Port Moller",
   // Dillingham
@@ -20,20 +21,20 @@ const AIRPORTS = {
   KQA: "Akun", AKB: "Atka", IKO: "Nikolski", SNP: "St. Paul", STG: "St. George",
   // King Salmon
   WSN: "South Naknek", EGX: "Egegik", IGG: "Igiugig", PIP: "Pilot Point", UGB: "Ugashik",
-  PTH: "Port Heiden", KPV: "Perryville", KBW: "Chignik Bay", KCQ: "Chignik Lake", KCL: "Chignik Lagoon"
+  PTH: "Port Heiden", KPV: "Perryville", KBW: "Chignik", KCQ: "Chignik Lake", KCL: "Chignik Lagoon"
 };
 
 // Approximate airport positions [lat, lon] for the employee run map and mock flight lengths (decimal degrees, west negative).
 const AIRPORT_COORDS = {
   ANC: [61.174, -149.996], ENA: [60.573, -151.245], BET: [60.780, -161.838], DLG: [59.045, -158.505],
   AKN: [58.677, -156.649], CDB: [55.206, -162.725], DUT: [53.900, -166.544], EMK: [62.786, -164.491],
-  VAK: [61.534, -165.584], HPB: [61.524, -166.147], SCM: [61.845, -165.571], WWT: [60.824, -164.504],
+  VAK: [61.534, -165.584], HPB: [61.524, -166.147], SCM: [61.845, -165.571], EWU: [60.824, -164.504], WWT: [60.939, -164.641],
   NME: [60.471, -164.701], OOK: [60.542, -165.087], TNK: [60.576, -165.272], MYU: [60.371, -166.271],
   CYF: [60.150, -164.286], KPN: [59.933, -164.031], KKH: [59.961, -162.881], KWK: [59.876, -163.169],
   WTL: [60.336, -162.667], KWN: [59.755, -161.845], EEK: [60.214, -162.044], KOT: [63.031, -163.533],
   SXP: [62.521, -164.848], AUK: [62.680, -164.660], ATT: [60.867, -162.273], NUP: [60.906, -162.439],
   KUK: [60.874, -162.524], MLL: [61.864, -162.026], PQS: [61.934, -162.900], KSM: [62.061, -163.302],
-  MOU: [62.096, -163.682],
+  MOU: [62.096, -163.682], KKI: [60.909, -161.432], KWT: [60.790, -161.444],
   KVC: [55.116, -162.266], KFP: [54.847, -163.410], NLG: [56.008, -161.160], PML: [56.006, -160.561],
   TOG: [59.053, -160.397], TWA: [59.076, -160.273], KMO: [58.990, -159.050], CLP: [58.834, -158.529],
   KLL: [59.128, -156.859], KNW: [59.450, -157.328], KEK: [59.357, -157.471], KGK: [59.727, -157.259],
@@ -44,33 +45,46 @@ const AIRPORT_COORDS = {
   KCQ: [56.255, -158.775], KCL: [56.311, -158.534]
 };
 
-// Grant's real scheduled network: hub → places it flies to nonstop. Every route is flown both ways.
-const GRANT_NETWORK = {
+// Grant's real scheduled network, from Grant's own route list: airport → places it flies to nonstop from there.
+// Listed per direction: a few routes are only flown one way (e.g. Clarks Point → Bethel, Igiugig → Dillingham).
+// Every Grant leg anywhere in the app (bookable flights, runs) must be a pair in this list.
+const GRANT_ROUTES = {
   ANC: ["ENA"],
-  BET: ["VAK", "HPB", "SCM", "WWT", "NME", "OOK", "TNK", "MYU", "CYF", "KPN", "KKH", "KWK", "WTL", "KWN", "EEK",
-    "EMK", "KOT", "SXP", "AUK", "ATT", "NUP", "KUK", "MLL", "PQS", "KSM", "MOU", "DLG"],
-  EMK: ["BET", "KOT", "SXP", "AUK"],
-  CDB: ["KVC", "KFP", "NLG", "PML"],
-  DLG: ["TOG", "TWA", "KMO", "CLP", "AKN", "KLL", "KNW", "KEK", "KGK"],
-  DUT: ["KQA", "AKB", "IKO", "SNP", "STG"],
-  AKN: ["KLL", "WSN", "EGX", "IGG", "DLG", "PIP", "UGB", "PTH", "KPV", "KBW", "KCQ", "KCL"]
+  ENA: ["ANC"],
+  BET: ["KKI", "AUK", "ATT", "CYF", "VAK", "DLG", "EEK", "EMK", "HPB", "KUK", "KPN", "KKH", "KOT", "KWT", "KWK",
+    "MLL", "MYU", "EWU", "MOU", "WWT", "NME", "SXP", "NUP", "PQS", "KWN", "SCM", "KSM", "OOK", "WTL", "TNK"],
+  EMK: ["AUK", "BET", "KOT", "SXP"],
+  DLG: ["BET", "CLP", "KEK", "AKN", "KGK", "KLL", "KMO", "KNW", "WSN", "TOG", "TWA"],
+  AKN: ["KBW", "KCL", "KCQ", "CLP", "DLG", "EGX", "IGG", "KLL", "KPV", "PIP", "PTH", "WSN", "UGB"],
+  CDB: ["KFP", "KVC", "NLG", "PML"],
+  DUT: ["KQA", "AKB", "IKO", "STG", "SNP"],
+  AKB: ["DUT"], ATT: ["BET", "KUK", "NUP"], AUK: ["BET", "EMK"], CLP: ["BET", "DLG", "AKN", "WSN"],
+  CYF: ["BET", "KPN"], EEK: ["BET", "KWN"], EGX: ["AKN", "PIP", "UGB"], EWU: ["BET", "WWT", "NME", "OOK", "TNK"],
+  HPB: ["BET", "VAK", "SCM"], IGG: ["DLG", "AKN", "KLL"], IKO: ["DUT"], KBW: ["KCL", "KCQ", "AKN", "KPV", "PTH"],
+  KCL: ["KBW", "KCQ", "AKN", "KPV", "PTH"], KCQ: ["KBW", "KCL", "AKN", "KPV", "PTH", "UGB"],
+  KEK: ["DLG", "KGK", "KMO", "KNW"], KFP: ["CDB", "KVC"], KGK: ["DLG", "KEK", "KNW"], KKH: ["BET", "KWK", "WTL"],
+  KKI: ["BET", "KWT"], KLL: ["DLG", "IGG", "AKN"], KMO: ["DLG", "KEK", "TOG", "TWA"], KNW: ["DLG", "KEK", "KGK"],
+  KOT: ["BET", "EMK"], KPN: ["BET", "CYF"], KPV: ["KBW", "KCL", "KCQ", "AKN", "PTH"], KQA: ["DUT"],
+  KSM: ["BET", "MOU"], KUK: ["ATT", "BET", "NUP"], KVC: ["CDB", "KFP"], KWK: ["BET", "KKH", "WTL"],
+  KWN: ["BET", "EEK"], KWT: ["KKI", "BET"], MLL: ["BET", "PQS"], MOU: ["BET", "KSM"], MYU: ["BET", "KSM", "OOK"],
+  NLG: ["CDB", "PML"], NME: ["BET", "EWU", "WWT", "OOK", "TNK"], NUP: ["ATT", "BET", "KUK"],
+  OOK: ["BET", "MYU", "EWU", "WWT", "NME", "TNK"], PIP: ["EGX", "AKN", "UGB"], PML: ["CDB", "NLG"],
+  PQS: ["BET", "MLL"], PTH: ["KBW", "KCL", "KCQ", "AKN", "KMO", "KPV"], SCM: ["BET", "VAK", "HPB"],
+  SNP: ["DUT", "STG"], STG: ["DUT", "SNP"], SXP: ["BET", "EMK"], TNK: ["BET", "EWU", "WWT", "NME", "OOK"],
+  TOG: ["DLG", "KMO", "TWA"], TWA: ["DLG", "KMO", "TOG"], UGB: ["KCQ", "EGX", "AKN", "PIP"],
+  VAK: ["BET", "HPB", "SCM"], WSN: ["CLP", "DLG", "AKN"], WTL: ["BET", "KKH", "KWK"],
+  WWT: ["BET", "NME", "OOK", "TNK"]
 };
 // Routes Grant only flies part of the year.
 const SEASONAL_PAIRS = new Set(["BET-DLG", "DLG-BET"]);
 
-// Every Grant route as unique code pairs [a, b] (a < b), then both directions as labelled ROUTES.
-const GRANT_PAIRS = (() => {
-  const seen = new Map();
-  Object.keys(GRANT_NETWORK).forEach(hub => GRANT_NETWORK[hub].forEach(c => {
-    const pair = [hub, c].sort();
-    seen.set(pair.join("-"), pair);
-  }));
-  return [...seen.values()];
-})();
-const ROUTES = GRANT_PAIRS.flatMap(([a, b]) => [
-  { from: airportLabel(a), to: airportLabel(b) },
-  { from: airportLabel(b), to: airportLabel(a) }
-]);
+function isGrantRoute(from, to) {
+  return !!GRANT_ROUTES[from] && GRANT_ROUTES[from].includes(to);
+}
+
+// Every Grant route as [from, to] code pairs, then as labelled ROUTES.
+const GRANT_PAIRS = Object.keys(GRANT_ROUTES).flatMap(from => GRANT_ROUTES[from].map(to => [from, to]));
+const ROUTES = GRANT_PAIRS.map(([a, b]) => ({ from: airportLabel(a), to: airportLabel(b) }));
 
 // Other airlines fly Anchorage to Grant's hubs (Grant doesn't). Every leg is flown both ways.
 // No partner times in the app: passengers check times on the airline's own site.
@@ -164,18 +178,28 @@ const CONNECTION_FLIGHTS = [
   ["GV9202", "KVC", "CDB", "17:10", "17:30"], ["GV9204", "KVC", "CDB", "09:00", "09:20"]
 ];
 
-// Generated mock legs for every Grant route not covered above: three out-and-backs a day from the hub
-// (morning, around midday, afternoon), one for seasonal routes. Length from distance at Caravan speed.
-// Numbers GV3001–GV3399: odd leaves the hub, even comes back.
+// Generated mock legs for every Grant route not covered above. Routes flown both ways get out-and-backs from
+// the busier end (three a day: morning, around midday, afternoon; one for seasonal routes); one-way routes get
+// one-way legs at the same times. Length from distance at Caravan speed. Numbers from GV3001, skipping used ones.
 (() => {
   const covered = new Set();
-  Object.keys(MOCK_FLIGHTS).forEach(k => covered.add(k.split("-").map(airportCodeOf).sort().join("-")));
-  CONNECTION_FLIGHTS.forEach(([, from, to]) => covered.add([from, to].sort().join("-")));
-  const hubOf = pair => Object.keys(GRANT_NETWORK).find(h => pair.includes(h) && GRANT_NETWORK[h].includes(pair.find(c => c !== h))) || pair[0];
-  let n = 3001;
-  GRANT_PAIRS.filter(p => !covered.has(p.join("-"))).forEach((pair, i) => {
-    const hub = hubOf(pair);
-    const spoke = pair.find(c => c !== hub);
+  Object.keys(MOCK_FLIGHTS).forEach(k => covered.add(k.split("-").map(airportCodeOf).join("-")));
+  CONNECTION_FLIGHTS.forEach(([, from, to]) => covered.add(from + "-" + to));
+  const used = new Set([...Object.values(MOCK_FLIGHTS).flat().map(f => f.num), ...CONNECTION_FLIGHTS.map(l => l[0])]);
+  let n = 3000;
+  const nextNum = () => { do n++; while (used.has("GV" + n)); return "GV" + n; };
+  const size = c => (GRANT_ROUTES[c] || []).length;
+  const done = new Set();
+  GRANT_PAIRS.forEach(([a, b], i) => {
+    const key = [a, b].sort().join("-");
+    if (done.has(key)) return;
+    done.add(key);
+    const both = isGrantRoute(b, a);
+    // hub → spoke is the outbound leg; for one-way routes that's the only direction flown.
+    const [hub, spoke] = !both || size(a) > size(b) || (size(a) === size(b) && a < b) ? [a, b] : [b, a];
+    const out = !covered.has(hub + "-" + spoke);
+    const back = both && !covered.has(spoke + "-" + hub);
+    if (!out && !back) return;
     const [la1, lo1] = AIRPORT_COORDS[hub];
     const [la2, lo2] = AIRPORT_COORDS[spoke];
     const nm = 60 * Math.hypot(la2 - la1, (lo2 - lo1) * Math.cos((la1 + la2) / 2 * Math.PI / 180));
@@ -184,11 +208,9 @@ const CONNECTION_FLIGHTS = [
     const starts = SEASONAL_PAIRS.has(hub + "-" + spoke) ? [11 * 60] : [7 * 60 + 30, 12 * 60 + 30, 16 * 60 + 30];
     starts.forEach(start => {
       const dep = start + offset;
-      const back = dep + dur + 25;
-      CONNECTION_FLIGHTS.push(
-        ["GV" + n, hub, spoke, fmtMin(dep), fmtMin(dep + dur)],
-        ["GV" + (n + 1), spoke, hub, fmtMin(back), fmtMin(back + dur)]);
-      n += 2;
+      const ret = dep + dur + 25;
+      if (out) CONNECTION_FLIGHTS.push([nextNum(), hub, spoke, fmtMin(dep), fmtMin(dep + dur)]);
+      if (back) CONNECTION_FLIGHTS.push([nextNum(), spoke, hub, fmtMin(ret), fmtMin(ret + dur)]);
     });
   });
 })();
@@ -232,7 +254,7 @@ const BASES = ["ANC", "ENA", "BET", "DLG", "AKN", "CDB", "DUT", "EMK"];
 
 // Mock multi-stop runs. Times are a template day centred on 12:00; buildRuns() shifts the whole
 // day so it is centred on the time the app was first opened today, so some runs are always in progress.
-// Every leg is a Grant route from GRANT_NETWORK; multi-stop runs go back through a hub between villages.
+// Every hop is a Grant route from GRANT_ROUTES, so multi-stop runs hop village to village only where Grant does.
 const RUN_TEMPLATES = [
   { id: "R-ANC-1", flightNum: "GV101", aircraft: "Piper Navajo", base: "ANC",
     legs: [["ANC", "ENA", "07:00", "07:35"], ["ENA", "ANC", "08:00", "08:35"]] },
@@ -243,29 +265,50 @@ const RUN_TEMPLATES = [
   { id: "R-ENA-1", flightNum: "GV131", aircraft: "Cessna 208 Caravan", base: "ENA",
     legs: [["ENA", "ANC", "09:30", "10:05"], ["ANC", "ENA", "10:45", "11:20"]] },
   { id: "R-BET-1", flightNum: "GV301", aircraft: "Cessna 208 Caravan", base: "BET",
-    legs: [["BET", "VAK", "08:30", "09:15"], ["VAK", "BET", "09:35", "10:20"], ["BET", "HPB", "10:50", "11:40"], ["HPB", "BET", "12:00", "12:50"]] },
+    legs: [["BET", "VAK", "08:30", "09:15"], ["VAK", "HPB", "09:35", "09:50"], ["HPB", "SCM", "10:10", "10:30"], ["SCM", "BET", "10:50", "11:45"]] },
   { id: "R-BET-2", flightNum: "GV311", aircraft: "Cessna 208 Caravan", base: "BET",
     legs: [["BET", "EMK", "10:15", "11:30"], ["EMK", "KOT", "11:50", "12:10"], ["KOT", "BET", "12:30", "13:45"]] },
   { id: "R-BET-3", flightNum: "GV321", aircraft: "Piper Navajo", base: "BET",
-    legs: [["BET", "KPN", "12:00", "12:40"], ["KPN", "BET", "13:00", "13:40"], ["BET", "KWK", "14:05", "14:35"], ["KWK", "BET", "14:55", "15:25"]] },
+    legs: [["BET", "KPN", "12:00", "12:40"], ["KPN", "CYF", "13:00", "13:15"], ["CYF", "BET", "13:35", "14:15"]] },
   { id: "R-BET-4", flightNum: "GV331", aircraft: "Cessna 208 Caravan", base: "BET",
-    legs: [["BET", "OOK", "15:00", "15:45"], ["OOK", "BET", "16:05", "16:50"], ["BET", "TNK", "17:15", "18:05"], ["TNK", "BET", "18:25", "19:15"]] },
+    legs: [["BET", "OOK", "15:00", "15:45"], ["OOK", "NME", "16:05", "16:15"], ["NME", "TNK", "16:35", "16:45"], ["TNK", "BET", "17:05", "17:55"]] },
   { id: "R-BET-5", flightNum: "GV341", aircraft: "Cessna 208 Caravan", base: "BET",
-    legs: [["BET", "KKH", "20:30", "21:05"], ["KKH", "BET", "21:25", "22:00"]] },
+    legs: [["BET", "KKH", "20:30", "21:05"], ["KKH", "KWK", "21:25", "21:35"], ["KWK", "WTL", "21:55", "22:10"], ["WTL", "BET", "22:30", "22:55"]] },
+  { id: "R-BET-6", flightNum: "GV351", aircraft: "Cessna 208 Caravan", base: "BET",
+    legs: [["BET", "KWT", "07:00", "07:15"], ["KWT", "KKI", "07:35", "07:45"], ["KKI", "BET", "08:05", "08:25"]] },
+  { id: "R-BET-7", flightNum: "GV361", aircraft: "Piper Navajo", base: "BET",
+    legs: [["BET", "ATT", "09:00", "09:20"], ["ATT", "NUP", "09:40", "09:50"], ["NUP", "KUK", "10:10", "10:20"], ["KUK", "BET", "10:40", "11:00"]] },
+  { id: "R-BET-8", flightNum: "GV371", aircraft: "Cessna 208 Caravan", base: "BET",
+    legs: [["BET", "EWU", "13:30", "14:20"], ["EWU", "WWT", "14:40", "14:55"], ["WWT", "BET", "15:15", "16:10"]] },
+  { id: "R-BET-9", flightNum: "GV381", aircraft: "Cessna 208 Caravan", base: "BET",
+    legs: [["BET", "MLL", "18:00", "18:40"], ["MLL", "PQS", "19:00", "19:15"], ["PQS", "BET", "19:35", "20:20"]] },
   { id: "R-DLG-1", flightNum: "GV401", aircraft: "Cessna 208 Caravan", base: "DLG",
-    legs: [["DLG", "TWA", "09:00", "09:30"], ["TWA", "DLG", "09:50", "10:20"], ["DLG", "TOG", "10:45", "11:20"], ["TOG", "DLG", "11:40", "12:15"]] },
+    legs: [["DLG", "TWA", "09:00", "09:30"], ["TWA", "TOG", "09:50", "10:00"], ["TOG", "DLG", "10:20", "10:55"]] },
   { id: "R-DLG-2", flightNum: "GV411", aircraft: "Piper Navajo", base: "DLG",
-    legs: [["DLG", "KMO", "13:30", "13:50"], ["KMO", "DLG", "14:10", "14:30"], ["DLG", "CLP", "14:50", "15:05"], ["CLP", "DLG", "15:25", "15:40"]] },
+    legs: [["DLG", "KMO", "13:30", "13:50"], ["KMO", "DLG", "14:10", "14:30"], ["DLG", "CLP", "14:50", "15:05"], ["CLP", "WSN", "15:25", "15:35"], ["WSN", "DLG", "15:55", "16:20"]] },
+  { id: "R-DLG-3", flightNum: "GV421", aircraft: "Cessna 208 Caravan", base: "DLG",
+    legs: [["DLG", "KEK", "08:00", "08:35"], ["KEK", "KNW", "08:55", "09:05"], ["KNW", "KGK", "09:25", "09:40"], ["KGK", "DLG", "10:00", "10:35"]] },
   { id: "R-AKN-1", flightNum: "GV501", aircraft: "Cessna 208 Caravan", base: "AKN",
     legs: [["AKN", "KLL", "10:00", "10:30"], ["KLL", "DLG", "10:50", "11:20"], ["DLG", "AKN", "11:45", "12:25"]] },
   { id: "R-AKN-2", flightNum: "GV511", aircraft: "Piper Navajo", base: "AKN",
     legs: [["AKN", "DLG", "15:30", "16:10"], ["DLG", "AKN", "16:40", "17:20"]] },
   { id: "R-AKN-3", flightNum: "GV521", aircraft: "Cessna 208 Caravan", base: "AKN",
-    legs: [["AKN", "IGG", "13:00", "13:40"], ["IGG", "AKN", "14:00", "14:40"]] },
+    legs: [["AKN", "IGG", "13:00", "13:40"], ["IGG", "KLL", "14:00", "14:20"], ["KLL", "AKN", "14:40", "15:10"]] },
+  { id: "R-AKN-4", flightNum: "GV531", aircraft: "Cessna 208 Caravan", base: "AKN",
+    legs: [["AKN", "EGX", "08:00", "08:30"], ["EGX", "PIP", "08:50", "09:05"], ["PIP", "UGB", "09:25", "09:35"], ["UGB", "AKN", "09:55", "10:35"]] },
+  { id: "R-AKN-5", flightNum: "GV541", aircraft: "Cessna 208 Caravan", base: "AKN",
+    legs: [["AKN", "PTH", "11:00", "12:05"], ["PTH", "KBW", "12:25", "12:45"], ["KBW", "KCL", "13:05", "13:15"], ["KCL", "KCQ", "13:35", "13:45"],
+      ["KCQ", "KPV", "14:05", "14:25"], ["KPV", "AKN", "14:45", "16:00"]] },
   { id: "R-CDB-1", flightNum: "GV601", aircraft: "Cessna 208 Caravan", base: "CDB",
-    legs: [["CDB", "KVC", "11:00", "11:20"], ["KVC", "CDB", "11:40", "12:00"], ["CDB", "KFP", "12:20", "12:50"], ["KFP", "CDB", "13:10", "13:40"]] },
+    legs: [["CDB", "KVC", "11:00", "11:20"], ["KVC", "KFP", "11:40", "12:05"], ["KFP", "CDB", "12:25", "12:55"]] },
+  { id: "R-CDB-2", flightNum: "GV611", aircraft: "Cessna 208 Caravan", base: "CDB",
+    legs: [["CDB", "NLG", "14:30", "15:15"], ["NLG", "PML", "15:35", "15:45"], ["PML", "CDB", "16:05", "16:55"]] },
   { id: "R-DUT-1", flightNum: "GV701", aircraft: "Piper Navajo", base: "DUT",
     legs: [["DUT", "AKB", "09:30", "11:15"], ["AKB", "DUT", "12:00", "13:45"]] },
+  { id: "R-DUT-2", flightNum: "GV711", aircraft: "Piper Navajo", base: "DUT",
+    legs: [["DUT", "SNP", "08:00", "09:45"], ["SNP", "STG", "10:15", "10:40"], ["STG", "DUT", "11:10", "12:40"]] },
+  { id: "R-DUT-3", flightNum: "GV721", aircraft: "Cessna 208 Caravan", base: "DUT",
+    legs: [["DUT", "KQA", "14:00", "14:20"], ["KQA", "DUT", "14:40", "15:00"], ["DUT", "IKO", "15:30", "16:20"], ["IKO", "DUT", "16:50", "17:40"]] },
   { id: "R-EMK-1", flightNum: "GV801", aircraft: "Cessna 208 Caravan", base: "EMK",
     legs: [["EMK", "AUK", "12:30", "12:45"], ["AUK", "EMK", "13:05", "13:20"], ["EMK", "SXP", "13:40", "13:55"], ["SXP", "EMK", "14:15", "14:30"]] },
   { id: "R-EMK-2", flightNum: "GV811", aircraft: "Cessna 208 Caravan", base: "EMK",
@@ -427,6 +470,17 @@ function loadData() {
   Object.keys(data.flightManifests).forEach(num => {
     if (!Array.isArray(data.flightManifests[num])) delete data.flightManifests[num];
   });
+  // Drop trips saved by older versions on legs Grant doesn't fly (e.g. Kenai → Bethel), with their manifest spots.
+  const tripLegs = t => Array.isArray(t.legs) && t.legs.length ? t.legs : [t];
+  const dropped = new Set(data.trips
+    .filter(t => !isPlainObject(t) || !tripLegs(t).every(l => isGrantRoute(airportCodeOf(l.from), airportCodeOf(l.to))))
+    .map(t => t && t.id));
+  if (dropped.size) {
+    data.trips = data.trips.filter(t => !dropped.has(t && t.id));
+    Object.keys(data.flightManifests).forEach(num => {
+      data.flightManifests[num] = data.flightManifests[num].filter(p => !p || p.tripId == null || !dropped.has(p.tripId));
+    });
+  }
   // Add seed manifests for existing users too, without touching manifests that already exist.
   Object.keys(SEED_MANIFESTS).forEach(num => {
     if (data.flightManifests[num]) return;
