@@ -2,25 +2,96 @@
 // Passenger + Employee modes. Mock data in localStorage for fast iteration.
 // Live map via OpenSky. Later wrap in Capacitor/React Native for real mobile app.
 
-const ROUTES = [
-  { from: "Anchorage (ANC)", to: "Kenai (ENA)" },
-  { from: "Kenai (ENA)", to: "Anchorage (ANC)" },
-  { from: "Bethel (BET)", to: "Chevak (VAK)" },
-  { from: "Bethel (BET)", to: "Hooper Bay (HPB)" },
-  { from: "Bethel (BET)", to: "Emmonak (EMK)" },
-  { from: "Bethel (BET)", to: "Kipnuk (KPN)" },
-  { from: "Dillingham (DLG)", to: "Togiak (TOG)" },
-  { from: "King Salmon (AKN)", to: "Dillingham (DLG)" },
-  { from: "Dutch Harbor (DUT)", to: "Atka (AKB)" },
-  { from: "Cold Bay (CDB)", to: "King Cove (KVC)" },
-  { from: "Emmonak (EMK)", to: "Kotlik (KOT)" }
-];
+const AIRPORTS = {
+  ANC: "Anchorage", ENA: "Kenai", BET: "Bethel", DLG: "Dillingham", AKN: "King Salmon",
+  CDB: "Cold Bay", DUT: "Dutch Harbor", EMK: "Emmonak",
+  // Bethel
+  VAK: "Chevak", HPB: "Hooper Bay", SCM: "Scammon Bay", WWT: "Mertarvik", NME: "Nightmute",
+  OOK: "Toksook Bay", TNK: "Tununak", MYU: "Mekoryuk", CYF: "Chefornak", KPN: "Kipnuk",
+  KKH: "Kongiganak", KWK: "Kwigillingok", WTL: "Tuntutuliak", KWN: "Quinhagak", EEK: "Eek",
+  KOT: "Kotlik", SXP: "Nunam Iqua", AUK: "Alakanuk", ATT: "Atmautluak", NUP: "Nunapitchuk",
+  KUK: "Kasigluk", MLL: "Marshall", PQS: "Pilot Station", KSM: "St Mary's", MOU: "Mountain Village",
+  // Cold Bay
+  KVC: "King Cove", KFP: "False Pass", NLG: "Nelson Lagoon", PML: "Port Moller",
+  // Dillingham
+  TOG: "Togiak", TWA: "Twin Hills", KMO: "Manokotak", CLP: "Clarks Point", KLL: "Levelock",
+  KNW: "New Stuyahok", KEK: "Ekwok", KGK: "Koliganek",
+  // Dutch Harbor (Akun: Akutan's airport is on Akun Island)
+  KQA: "Akun", AKB: "Atka", IKO: "Nikolski", SNP: "St. Paul", STG: "St. George",
+  // King Salmon
+  WSN: "South Naknek", EGX: "Egegik", IGG: "Igiugig", PIP: "Pilot Point", UGB: "Ugashik",
+  PTH: "Port Heiden", KPV: "Perryville", KBW: "Chignik Bay", KCQ: "Chignik Lake", KCL: "Chignik Lagoon"
+};
 
-// Unique airport list for From/To selects: hubs first, then villages A–Z.
+// Approximate airport positions [lat, lon] for the employee run map and mock flight lengths (decimal degrees, west negative).
+const AIRPORT_COORDS = {
+  ANC: [61.174, -149.996], ENA: [60.573, -151.245], BET: [60.780, -161.838], DLG: [59.045, -158.505],
+  AKN: [58.677, -156.649], CDB: [55.206, -162.725], DUT: [53.900, -166.544], EMK: [62.786, -164.491],
+  VAK: [61.534, -165.584], HPB: [61.524, -166.147], SCM: [61.845, -165.571], WWT: [60.824, -164.504],
+  NME: [60.471, -164.701], OOK: [60.542, -165.087], TNK: [60.576, -165.272], MYU: [60.371, -166.271],
+  CYF: [60.150, -164.286], KPN: [59.933, -164.031], KKH: [59.961, -162.881], KWK: [59.876, -163.169],
+  WTL: [60.336, -162.667], KWN: [59.755, -161.845], EEK: [60.214, -162.044], KOT: [63.031, -163.533],
+  SXP: [62.521, -164.848], AUK: [62.680, -164.660], ATT: [60.867, -162.273], NUP: [60.906, -162.439],
+  KUK: [60.874, -162.524], MLL: [61.864, -162.026], PQS: [61.934, -162.900], KSM: [62.061, -163.302],
+  MOU: [62.096, -163.682],
+  KVC: [55.116, -162.266], KFP: [54.847, -163.410], NLG: [56.008, -161.160], PML: [56.006, -160.561],
+  TOG: [59.053, -160.397], TWA: [59.076, -160.273], KMO: [58.990, -159.050], CLP: [58.834, -158.529],
+  KLL: [59.128, -156.859], KNW: [59.450, -157.328], KEK: [59.357, -157.471], KGK: [59.727, -157.259],
+  KQA: [54.133, -165.778], AKB: [52.220, -174.206], IKO: [52.942, -168.849], SNP: [57.167, -170.220],
+  STG: [56.578, -169.662],
+  WSN: [58.703, -157.003], EGX: [58.186, -157.376], IGG: [59.324, -155.902], PIP: [57.580, -157.572],
+  UGB: [57.528, -157.399], PTH: [56.959, -158.633], KPV: [55.906, -159.163], KBW: [56.296, -158.401],
+  KCQ: [56.255, -158.775], KCL: [56.311, -158.534]
+};
+
+// Grant's real scheduled network: hub → places it flies to nonstop. Every route is flown both ways.
+const GRANT_NETWORK = {
+  ANC: ["ENA"],
+  BET: ["VAK", "HPB", "SCM", "WWT", "NME", "OOK", "TNK", "MYU", "CYF", "KPN", "KKH", "KWK", "WTL", "KWN", "EEK",
+    "EMK", "KOT", "SXP", "AUK", "ATT", "NUP", "KUK", "MLL", "PQS", "KSM", "MOU", "DLG"],
+  EMK: ["BET", "KOT", "SXP", "AUK"],
+  CDB: ["KVC", "KFP", "NLG", "PML"],
+  DLG: ["TOG", "TWA", "KMO", "CLP", "AKN", "KLL", "KNW", "KEK", "KGK"],
+  DUT: ["KQA", "AKB", "IKO", "SNP", "STG"],
+  AKN: ["KLL", "WSN", "EGX", "IGG", "DLG", "PIP", "UGB", "PTH", "KPV", "KBW", "KCQ", "KCL"]
+};
+// Routes Grant only flies part of the year.
+const SEASONAL_PAIRS = new Set(["BET-DLG", "DLG-BET"]);
+
+// Every Grant route as unique code pairs [a, b] (a < b), then both directions as labelled ROUTES.
+const GRANT_PAIRS = (() => {
+  const seen = new Map();
+  Object.keys(GRANT_NETWORK).forEach(hub => GRANT_NETWORK[hub].forEach(c => {
+    const pair = [hub, c].sort();
+    seen.set(pair.join("-"), pair);
+  }));
+  return [...seen.values()];
+})();
+const ROUTES = GRANT_PAIRS.flatMap(([a, b]) => [
+  { from: airportLabel(a), to: airportLabel(b) },
+  { from: airportLabel(b), to: airportLabel(a) }
+]);
+
+// Other airlines fly Anchorage to Grant's hubs (Grant doesn't). Every leg is flown both ways.
+// No partner times in the app: passengers check times on the airline's own site.
+const PARTNER_AIRLINES = {
+  alaska: { name: "Alaska Airlines", button: "Book this part with Alaska Airlines", url: "https://www.alaskaair.com/" },
+  ravn: { name: "Ravn Alaska", button: "Book with Ravn Alaska", url: "https://www.ravnalaska.com/fly" }
+};
+const PARTNER_ROUTES = [
+  ["alaska", "ANC", ["BET", "DLG", "AKN", "CDB", "DUT", "SNP", "KSM"]],
+  ["ravn", "ANC", ["CDB", "DUT", "SNP", "KSM"]]
+];
+// [{ airline, from, to }] in both directions.
+const PARTNER_LEGS = PARTNER_ROUTES.flatMap(([airline, from, tos]) =>
+  tos.flatMap(to => [{ airline, from, to }, { airline, from: to, to: from }]));
+
+// Unique airport list for From/To selects (anywhere Grant or a partner flies): hubs first, then villages A–Z.
 const HUB_ORDER = ["Anchorage (ANC)", "Kenai (ENA)", "Bethel (BET)", "Dillingham (DLG)", "King Salmon (AKN)", "Dutch Harbor (DUT)", "Cold Bay (CDB)", "Emmonak (EMK)"];
 const BOOK_AIRPORTS = (() => {
   const all = new Set();
   ROUTES.forEach(r => { all.add(r.from); all.add(r.to); });
+  PARTNER_LEGS.forEach(l => { all.add(airportLabel(l.from)); all.add(airportLabel(l.to)); });
   const hubs = HUB_ORDER.filter(a => all.has(a));
   const villages = [...all].filter(a => !HUB_ORDER.includes(a)).sort();
   return [...hubs, ...villages];
@@ -65,29 +136,13 @@ const MOCK_FLIGHTS = {
     { num: "GV1610", dep: "09:30", arr: "10:45", dur: "1h15m" },
     { num: "GV1630", dep: "12:45", arr: "13:45", dur: "1h" },
     { num: "GV1650", dep: "16:15", arr: "17:15", dur: "1h" }
-  ],
-  "default": [
-    { num: "GV2010", dep: "09:00", arr: "09:40", dur: "40m" },
-    { num: "GV2030", dep: "12:00", arr: "12:40", dur: "40m" },
-    { num: "GV2050", dep: "15:30", arr: "16:10", dur: "40m" }
   ]
 };
 
 // Mock legs used to build connecting itineraries: [num, from, to, dep, arr] (24h local).
-// Kenai and the villages reach the hubs through Anchorage; villages reach Anchorage through their hub.
-// Real direct routes in MOCK_FLIGHTS (except "default") and the PASSENGER_RUN_IDS runs are added on top.
+// Hand-written legs first; every other Grant route gets generated legs below. Real direct routes in
+// MOCK_FLIGHTS and the PASSENGER_RUN_IDS runs are added on top.
 const CONNECTION_FLIGHTS = [
-  // Anchorage ↔ hubs
-  ["GV3101", "ANC", "BET", "07:30", "09:00"], ["GV3103", "ANC", "BET", "11:00", "12:30"], ["GV3105", "ANC", "BET", "15:30", "17:00"],
-  ["GV3102", "BET", "ANC", "09:45", "11:15"], ["GV3104", "BET", "ANC", "11:45", "13:15"], ["GV3106", "BET", "ANC", "17:00", "18:30"],
-  ["GV3201", "ANC", "DLG", "07:30", "08:40"], ["GV3203", "ANC", "DLG", "11:00", "12:10"], ["GV3205", "ANC", "DLG", "16:00", "17:10"],
-  ["GV3202", "DLG", "ANC", "09:20", "10:30"], ["GV3204", "DLG", "ANC", "11:00", "12:10"], ["GV3206", "DLG", "ANC", "18:00", "19:10"],
-  ["GV3301", "ANC", "AKN", "08:00", "09:05"], ["GV3303", "ANC", "AKN", "14:00", "15:05"],
-  ["GV3302", "AKN", "ANC", "10:00", "11:05"], ["GV3304", "AKN", "ANC", "16:00", "17:05"],
-  ["GV3401", "ANC", "DUT", "07:30", "10:20"], ["GV3403", "ANC", "DUT", "13:00", "15:50"],
-  ["GV3402", "DUT", "ANC", "10:00", "12:50"], ["GV3404", "DUT", "ANC", "16:45", "19:35"],
-  ["GV3501", "ANC", "CDB", "08:00", "10:20"], ["GV3503", "ANC", "CDB", "13:30", "15:50"],
-  ["GV3502", "CDB", "ANC", "11:00", "13:20"], ["GV3504", "CDB", "ANC", "16:30", "18:50"],
   // Bethel ↔ villages (Bethel → Chevak and Bethel → Emmonak come from MOCK_FLIGHTS)
   ["GV2906", "VAK", "BET", "09:35", "10:20"], ["GV2912", "VAK", "BET", "12:05", "12:50"], ["GV2922", "VAK", "BET", "15:35", "16:20"],
   ["GV2931", "BET", "HPB", "09:00", "09:50"], ["GV2933", "BET", "HPB", "13:15", "14:05"],
@@ -108,6 +163,35 @@ const CONNECTION_FLIGHTS = [
   ["GV9201", "CDB", "KVC", "16:30", "16:50"], ["GV9203", "CDB", "KVC", "08:20", "08:40"],
   ["GV9202", "KVC", "CDB", "17:10", "17:30"], ["GV9204", "KVC", "CDB", "09:00", "09:20"]
 ];
+
+// Generated mock legs for every Grant route not covered above: three out-and-backs a day from the hub
+// (morning, around midday, afternoon), one for seasonal routes. Length from distance at Caravan speed.
+// Numbers GV3001–GV3399: odd leaves the hub, even comes back.
+(() => {
+  const covered = new Set();
+  Object.keys(MOCK_FLIGHTS).forEach(k => covered.add(k.split("-").map(airportCodeOf).sort().join("-")));
+  CONNECTION_FLIGHTS.forEach(([, from, to]) => covered.add([from, to].sort().join("-")));
+  const hubOf = pair => Object.keys(GRANT_NETWORK).find(h => pair.includes(h) && GRANT_NETWORK[h].includes(pair.find(c => c !== h))) || pair[0];
+  let n = 3001;
+  GRANT_PAIRS.filter(p => !covered.has(p.join("-"))).forEach((pair, i) => {
+    const hub = hubOf(pair);
+    const spoke = pair.find(c => c !== hub);
+    const [la1, lo1] = AIRPORT_COORDS[hub];
+    const [la2, lo2] = AIRPORT_COORDS[spoke];
+    const nm = 60 * Math.hypot(la2 - la1, (lo2 - lo1) * Math.cos((la1 + la2) / 2 * Math.PI / 180));
+    const dur = Math.max(15, Math.round((nm / 150 * 60 + 10) / 5) * 5);
+    const offset = (i * 7 % 6) * 10;
+    const starts = SEASONAL_PAIRS.has(hub + "-" + spoke) ? [11 * 60] : [7 * 60 + 30, 12 * 60 + 30, 16 * 60 + 30];
+    starts.forEach(start => {
+      const dep = start + offset;
+      const back = dep + dur + 25;
+      CONNECTION_FLIGHTS.push(
+        ["GV" + n, hub, spoke, fmtMin(dep), fmtMin(dep + dur)],
+        ["GV" + (n + 1), spoke, hub, fmtMin(back), fmtMin(back + dur)]);
+      n += 2;
+    });
+  });
+})();
 
 // Employee runs passengers can book onto; consecutive legs share one flight number (stay on the plane).
 const PASSENGER_RUN_IDS = ["R-BET-1", "R-BET-2", "R-BET-3", "R-DLG-1", "R-CDB-1", "R-DUT-1"];
@@ -137,28 +221,6 @@ const SEED_MANIFESTS = {
   GV2905: { indices: [8, 9, 10, 11, 0], checkedIn: 2 }
 };
 
-const AIRPORTS = {
-  ANC: "Anchorage", ENA: "Kenai", BET: "Bethel", DLG: "Dillingham", AKN: "King Salmon",
-  CDB: "Cold Bay", DUT: "Dutch Harbor", EMK: "Emmonak",
-  TWA: "Twin Hills", TOG: "Togiak", KMO: "Manokotak", WKK: "Aleknagik",
-  VAK: "Chevak", HPB: "Hooper Bay", KOT: "Kotlik", KPN: "Kipnuk", KWK: "Kwigillingok",
-  OOK: "Toksook Bay", TNK: "Tununak", KKH: "Kongiganak",
-  KLL: "Levelock", IGG: "Igiugig", KVC: "King Cove", KFP: "False Pass", AKB: "Atka",
-  AUK: "Alakanuk", SXP: "Nunam Iqua", MOU: "Mountain Village", PQS: "Pilot Station"
-};
-
-// Approximate airport positions [lat, lon] for the employee run map (decimal degrees, west negative).
-const AIRPORT_COORDS = {
-  ANC: [61.174, -149.996], ENA: [60.573, -151.245], BET: [60.780, -161.838], DLG: [59.045, -158.505],
-  AKN: [58.677, -156.649], CDB: [55.206, -162.725], DUT: [53.900, -166.544], EMK: [62.786, -164.491],
-  TWA: [59.076, -160.273], TOG: [59.053, -160.397], KMO: [58.990, -159.050], WKK: [59.282, -158.618],
-  VAK: [61.534, -165.584], HPB: [61.524, -166.147], KOT: [63.031, -163.533], KPN: [59.933, -164.031],
-  KWK: [59.876, -163.169], OOK: [60.542, -165.087], TNK: [60.576, -165.272], KKH: [59.961, -162.881],
-  KLL: [59.128, -156.859], IGG: [59.324, -155.902], KVC: [55.116, -162.266], KFP: [54.847, -163.410],
-  AKB: [52.220, -174.206], AUK: [62.680, -164.660], SXP: [62.521, -164.848], MOU: [62.096, -163.682],
-  PQS: [61.934, -162.900]
-};
-
 // Faint region caption on the run map, by run base.
 const MAP_REGIONS = {
   ANC: "Cook Inlet", ENA: "Cook Inlet", BET: "Yukon-Kuskokwim Delta", EMK: "Lower Yukon",
@@ -170,6 +232,7 @@ const BASES = ["ANC", "ENA", "BET", "DLG", "AKN", "CDB", "DUT", "EMK"];
 
 // Mock multi-stop runs. Times are a template day centred on 12:00; buildRuns() shifts the whole
 // day so it is centred on the time the app was first opened today, so some runs are always in progress.
+// Every leg is a Grant route from GRANT_NETWORK; multi-stop runs go back through a hub between villages.
 const RUN_TEMPLATES = [
   { id: "R-ANC-1", flightNum: "GV101", aircraft: "Piper Navajo", base: "ANC",
     legs: [["ANC", "ENA", "07:00", "07:35"], ["ENA", "ANC", "08:00", "08:35"]] },
@@ -180,31 +243,33 @@ const RUN_TEMPLATES = [
   { id: "R-ENA-1", flightNum: "GV131", aircraft: "Cessna 208 Caravan", base: "ENA",
     legs: [["ENA", "ANC", "09:30", "10:05"], ["ANC", "ENA", "10:45", "11:20"]] },
   { id: "R-BET-1", flightNum: "GV301", aircraft: "Cessna 208 Caravan", base: "BET",
-    legs: [["BET", "VAK", "08:30", "09:15"], ["VAK", "HPB", "09:35", "09:55"], ["HPB", "BET", "10:15", "11:05"]] },
+    legs: [["BET", "VAK", "08:30", "09:15"], ["VAK", "BET", "09:35", "10:20"], ["BET", "HPB", "10:50", "11:40"], ["HPB", "BET", "12:00", "12:50"]] },
   { id: "R-BET-2", flightNum: "GV311", aircraft: "Cessna 208 Caravan", base: "BET",
     legs: [["BET", "EMK", "10:15", "11:30"], ["EMK", "KOT", "11:50", "12:10"], ["KOT", "BET", "12:30", "13:45"]] },
   { id: "R-BET-3", flightNum: "GV321", aircraft: "Piper Navajo", base: "BET",
-    legs: [["BET", "KPN", "12:00", "12:40"], ["KPN", "KWK", "13:00", "13:15"], ["KWK", "BET", "13:35", "14:10"]] },
+    legs: [["BET", "KPN", "12:00", "12:40"], ["KPN", "BET", "13:00", "13:40"], ["BET", "KWK", "14:05", "14:35"], ["KWK", "BET", "14:55", "15:25"]] },
   { id: "R-BET-4", flightNum: "GV331", aircraft: "Cessna 208 Caravan", base: "BET",
-    legs: [["BET", "OOK", "15:00", "15:45"], ["OOK", "TNK", "16:05", "16:20"], ["TNK", "BET", "16:40", "17:30"]] },
+    legs: [["BET", "OOK", "15:00", "15:45"], ["OOK", "BET", "16:05", "16:50"], ["BET", "TNK", "17:15", "18:05"], ["TNK", "BET", "18:25", "19:15"]] },
   { id: "R-BET-5", flightNum: "GV341", aircraft: "Cessna 208 Caravan", base: "BET",
     legs: [["BET", "KKH", "20:30", "21:05"], ["KKH", "BET", "21:25", "22:00"]] },
   { id: "R-DLG-1", flightNum: "GV401", aircraft: "Cessna 208 Caravan", base: "DLG",
-    legs: [["DLG", "TWA", "09:00", "09:30"], ["TWA", "TOG", "09:50", "10:05"], ["TOG", "DLG", "10:25", "11:00"]] },
+    legs: [["DLG", "TWA", "09:00", "09:30"], ["TWA", "DLG", "09:50", "10:20"], ["DLG", "TOG", "10:45", "11:20"], ["TOG", "DLG", "11:40", "12:15"]] },
   { id: "R-DLG-2", flightNum: "GV411", aircraft: "Piper Navajo", base: "DLG",
-    legs: [["DLG", "KMO", "13:30", "13:50"], ["KMO", "WKK", "14:10", "14:30"], ["WKK", "DLG", "14:50", "15:05"]] },
+    legs: [["DLG", "KMO", "13:30", "13:50"], ["KMO", "DLG", "14:10", "14:30"], ["DLG", "CLP", "14:50", "15:05"], ["CLP", "DLG", "15:25", "15:40"]] },
   { id: "R-AKN-1", flightNum: "GV501", aircraft: "Cessna 208 Caravan", base: "AKN",
-    legs: [["AKN", "KLL", "10:00", "10:30"], ["KLL", "IGG", "10:50", "11:20"], ["IGG", "AKN", "11:40", "12:30"]] },
+    legs: [["AKN", "KLL", "10:00", "10:30"], ["KLL", "DLG", "10:50", "11:20"], ["DLG", "AKN", "11:45", "12:25"]] },
   { id: "R-AKN-2", flightNum: "GV511", aircraft: "Piper Navajo", base: "AKN",
     legs: [["AKN", "DLG", "15:30", "16:10"], ["DLG", "AKN", "16:40", "17:20"]] },
+  { id: "R-AKN-3", flightNum: "GV521", aircraft: "Cessna 208 Caravan", base: "AKN",
+    legs: [["AKN", "IGG", "13:00", "13:40"], ["IGG", "AKN", "14:00", "14:40"]] },
   { id: "R-CDB-1", flightNum: "GV601", aircraft: "Cessna 208 Caravan", base: "CDB",
-    legs: [["CDB", "KVC", "11:00", "11:20"], ["KVC", "KFP", "11:40", "12:10"], ["KFP", "CDB", "12:30", "13:00"]] },
+    legs: [["CDB", "KVC", "11:00", "11:20"], ["KVC", "CDB", "11:40", "12:00"], ["CDB", "KFP", "12:20", "12:50"], ["KFP", "CDB", "13:10", "13:40"]] },
   { id: "R-DUT-1", flightNum: "GV701", aircraft: "Piper Navajo", base: "DUT",
     legs: [["DUT", "AKB", "09:30", "11:15"], ["AKB", "DUT", "12:00", "13:45"]] },
   { id: "R-EMK-1", flightNum: "GV801", aircraft: "Cessna 208 Caravan", base: "EMK",
-    legs: [["EMK", "AUK", "12:30", "12:45"], ["AUK", "SXP", "13:05", "13:20"], ["SXP", "EMK", "13:40", "14:00"]] },
+    legs: [["EMK", "AUK", "12:30", "12:45"], ["AUK", "EMK", "13:05", "13:20"], ["EMK", "SXP", "13:40", "13:55"], ["SXP", "EMK", "14:15", "14:30"]] },
   { id: "R-EMK-2", flightNum: "GV811", aircraft: "Cessna 208 Caravan", base: "EMK",
-    legs: [["EMK", "MOU", "15:30", "15:55"], ["MOU", "PQS", "16:15", "16:35"], ["PQS", "EMK", "16:55", "17:35"]] }
+    legs: [["EMK", "KOT", "15:30", "15:50"], ["KOT", "EMK", "16:10", "16:30"]] }
 ];
 
 const STORAGE_KEY = "grant-aviation-data-v3";
@@ -398,6 +463,7 @@ function minutesSinceMidnight(dateISO) {
 let state = loadData();
 let selectedFlight = null; // selected itinerary on the Book page
 let bookItineraries = [];
+let bookPlan = null; // Book page steps when a partner airline flies part of the trip
 const RUNS = buildRuns();
 let selectedMapRunId = null;
 let pageHistory = []; // passenger Back button: pages visited before the current one
@@ -645,11 +711,6 @@ function syncHomeTimer() {
   }
 }
 
-function getFlightsForRoute(from, to) {
-  const key = from + "-" + to;
-  return MOCK_FLIGHTS[key] || MOCK_FLIGHTS["default"];
-}
-
 // ---------- Itineraries (direct + connecting) ----------
 
 function airportCodeOf(label) {
@@ -668,7 +729,6 @@ function fmtDuration(min) {
 function bookableLegs() {
   const legs = [];
   Object.keys(MOCK_FLIGHTS).forEach(key => {
-    if (key === "default") return;
     const [from, to] = key.split("-").map(airportCodeOf);
     MOCK_FLIGHTS[key].forEach(f => legs.push({ num: f.num, from, to, dep: f.dep, arr: f.arr }));
   });
@@ -700,10 +760,12 @@ function itineraryFromLegs(path) {
 }
 
 // Itineraries from → to (airport labels as used in the Book selects), sorted by departure.
-function getItineraries(from, to) {
+// opts.minDep (minutes) keeps only flights leaving at or after that time, e.g. after a partner flight lands.
+function getItineraries(from, to, opts = {}) {
+  const minDep = opts.minDep || 0;
   const direct = MOCK_FLIGHTS[from + "-" + to];
   if (direct) {
-    return direct.map(f => ({
+    return direct.filter(f => toMinutes(f.dep) >= minDep).map(f => ({
       id: f.num + "@" + f.dep,
       num: f.num,
       legs: [{ num: f.num, from, to, dep: f.dep, arr: f.arr, dur: f.dur }],
@@ -760,6 +822,7 @@ function getItineraries(from, to) {
     (depOf(b) > depOf(a) || arrOf(b) < arrOf(a) || b.legs.length < a.legs.length);
   return all
     .filter(a => !all.some(b => b !== a && better(b, a)))
+    .filter(a => depOf(a) >= minDep)
     .sort((a, b) => depOf(a) - depOf(b) || a.totalMin - b.totalMin)
     .slice(0, MAX_ITINERARIES);
 }
@@ -786,8 +849,178 @@ function itineraryLegsHtml(legs, connections) {
   `).join("");
 }
 
+// ---------- Trips that need a partner airline ----------
+
+// Grant legs come after a partner leg: suggest Grant flights from midday so the partner flight has landed.
+const AFTER_PARTNER_MIN_DEP = 12 * 60;
+
+function isSeasonalLeg(l) {
+  return SEASONAL_PAIRS.has(airportCodeOf(l.from) + "-" + airportCodeOf(l.to));
+}
+
+// Cheapest way from → to (codes) over Grant routes and partner legs: fewest partner legs, then fewest legs.
+// Returns steps [{ type: "grant", from, to } | { type: "partner", from, to, airlines }], merging back-to-back Grant legs.
+function planTrip(origin, dest) {
+  const edges = new Map(); // code → [{ to, type, airlines }]
+  const addEdge = (from, to, type, airline) => {
+    if (!edges.has(from)) edges.set(from, []);
+    const list = edges.get(from);
+    const e = list.find(x => x.to === to && x.type === type);
+    if (e) { if (airline && !e.airlines.includes(airline)) e.airlines.push(airline); }
+    else list.push({ to, type, airlines: airline ? [airline] : [] });
+  };
+  bookableLegs().forEach(l => addEdge(l.from, l.to, "grant"));
+  PARTNER_LEGS.forEach(l => addEdge(l.from, l.to, "partner", l.airline));
+
+  const cost = new Map([[origin, 0]]);
+  const prev = new Map();
+  const open = [origin];
+  while (open.length) {
+    open.sort((a, b) => cost.get(a) - cost.get(b));
+    const at = open.shift();
+    if (at === dest) break;
+    (edges.get(at) || []).forEach(e => {
+      const c = cost.get(at) + (e.type === "partner" ? 100 : 1);
+      if (cost.has(e.to) && cost.get(e.to) <= c) return;
+      cost.set(e.to, c);
+      prev.set(e.to, { from: at, edge: e });
+      if (!open.includes(e.to)) open.push(e.to);
+    });
+  }
+  if (!prev.has(dest)) return null;
+  const path = [];
+  for (let c = dest; c !== origin; c = prev.get(c).from) path.unshift({ from: prev.get(c).from, ...prev.get(c).edge });
+  const steps = [];
+  path.forEach(p => {
+    const last = steps[steps.length - 1];
+    if (p.type === "grant" && last && last.type === "grant") last.to = p.to;
+    else steps.push(p.type === "grant" ? { type: "grant", from: p.from, to: p.to } : { type: "partner", from: p.from, to: p.to, airlines: p.airlines });
+  });
+  return steps;
+}
+
+function airlineNames(step) {
+  return step.airlines.map(a => PARTNER_AIRLINES[a].name).join(" or ");
+}
+
+function partnerButtonsHtml(step) {
+  return step.airlines.map(a => {
+    const p = PARTNER_AIRLINES[a];
+    return `<a class="btn partner-btn" href="${p.url}" target="_blank" rel="noopener">${p.button}</a>`;
+  }).join("") + `<p class="meta">Opens their website in a new window.</p>`;
+}
+
+// One partner part of a trip: who flies it and big buttons to their own site. prevStep tells us what comes before.
+function partnerStepHtml(step, num, total, prevStep) {
+  return `
+    <div class="card trip-step partner-step">
+      <div class="step-num">Part ${num} of ${total}</div>
+      <div class="itin-times">${airportLabel(step.from)} → ${airportLabel(step.to)}</div>
+      <p class="partner-who">This part is flown by ${airlineNames(step)} (not Grant)</p>
+      <p>Check times on their site.</p>
+      ${prevStep ? `<p class="meta">Choose a flight that leaves after your Grant flight lands in ${AIRPORTS[step.from] || step.from}.</p>` : ""}
+      ${partnerButtonsHtml(step)}
+    </div>`;
+}
+
+// Mock flights you can pick, shared by the normal Book list and each Grant part of a partner trip.
+// pick(i) is the onclick call; ids are prefix + i and prefix + "pick-" + i.
+function itinCardsHtml(list, date, prefix, pick) {
+  const now = new Date();
+  const gone = it => { const d = dateAt(date, it.dep); return !!d && d <= now; };
+  const allGone = list.length && list.every(gone);
+  return `
+    ${allGone ? `<p class="meta" style="margin-bottom:0.5rem;">Today's flights on this trip have already left. Please choose another day.</p>` : ""}
+    ${list.map((it, i) => gone(it) ? `
+      <button type="button" class="card itin-card" id="${prefix}${i}" disabled>
+        <div class="itin-times">Leaves ${it.dep} → Lands ${it.arr}</div>
+        <div class="meta">Flight ${it.num} · Already left today</div>
+      </button>` : `
+      <button type="button" class="card itin-card" onclick="${pick(i)}" id="${prefix}${i}" aria-pressed="false">
+        <div class="itin-times">Leaves ${it.dep} → Lands ${it.arr}</div>
+        ${it.direct
+          ? `<div class="meta">Flight ${it.num} · ${it.legs[0].dur} <span class="itin-tag">Nonstop</span></div>`
+          : `${itineraryLegsHtml(it.legs, it.connections)}<div class="itin-total">${stopsText(it)}</div>`}
+        ${it.legs.some(isSeasonalLeg) ? `<div class="meta">Seasonal route: only flies part of the year. Call us to check.</div>` : ""}
+        <div class="meta">Open seating</div>
+        <span class="itin-pick" id="${prefix}pick-${i}">Tap to choose</span>
+      </button>
+    `).join("")}`;
+}
+
+function markPicked(list, prefix, index) {
+  list.forEach((_, i) => {
+    const card = document.getElementById(prefix + i);
+    const pick = document.getElementById(prefix + "pick-" + i);
+    if (!card || card.disabled) return;
+    card.classList.toggle("selected", i === index);
+    card.setAttribute("aria-pressed", String(i === index));
+    if (pick) pick.textContent = i === index ? "✓ Chosen" : "Tap to choose";
+  });
+}
+
+// Book page for a trip with partner legs: every part as a numbered card, in order.
+function renderPartnerPlan(listEl, steps, date) {
+  const total = steps.length;
+  bookPlan = steps.map((step, s) => {
+    if (step.type !== "grant") return { ...step };
+    const afterPartner = steps.slice(0, s).some(x => x.type === "partner");
+    const from = airportLabel(step.from), to = airportLabel(step.to);
+    let list = getItineraries(from, to, { minDep: afterPartner ? AFTER_PARTNER_MIN_DEP : 0 });
+    let noAfternoon = false;
+    if (afterPartner && !list.length) { list = getItineraries(from, to); noAfternoon = true; }
+    return { ...step, afterPartner, noAfternoon, itineraries: list, selected: null };
+  });
+  const grantSteps = bookPlan.filter(s => s.type === "grant");
+  const partners = [...new Set(bookPlan.filter(s => s.type === "partner").flatMap(s => s.airlines))].map(a => PARTNER_AIRLINES[a].name).join(" or ");
+
+  listEl.innerHTML = `
+    <p class="step-label" style="font-weight:600;">5. Your trip has ${plural(total, "part")}</p>
+    <p class="meta" style="margin-bottom:0.75rem;">${grantSteps.length
+      ? `Grant doesn't fly all of this trip. ${partners} flies part of it. Book each part.`
+      : `Grant doesn't fly this trip. ${partners} does. Book it on their website.`}</p>
+    ${bookPlan.map((step, s) => step.type === "partner"
+      ? partnerStepHtml(step, s + 1, total, bookPlan[s - 1] && bookPlan[s - 1].type === "grant")
+      : `
+      <div class="card trip-step grant-step">
+        <div class="step-num">Part ${s + 1} of ${total} · Grant Aviation</div>
+        <div class="itin-times">${airportLabel(step.from)} → ${airportLabel(step.to)}</div>
+        ${step.afterPartner ? `<p>Your ${airlineNames(bookPlan[s - 1])} flight needs to land first. ${step.noAfternoon
+          ? "There is no Grant flight after midday on this trip, so check your landing time carefully."
+          : "These Grant flights leave after midday."} Pick one that leaves at least an hour after you land.</p>` : ""}
+        ${step.itineraries.length
+          ? `<p class="step-label" style="font-weight:600;">Tap a Grant flight to choose it</p>
+             ${itinCardsHtml(step.itineraries, date, `flight-${s}-`, i => `selectStepFlight(${s}, ${i})`)}`
+          : `<p class="meta">No Grant flights for this part in the prototype yet. Call us and we can help.</p>`}
+      </div>`).join("")}
+  `;
+  const btn = document.getElementById("confirmBtn");
+  btn.hidden = !grantSteps.length;
+}
+
+function selectStepFlight(s, index) {
+  const step = bookPlan && bookPlan[s];
+  const chosen = document.getElementById(`flight-${s}-${index}`);
+  if (!step || !step.itineraries[index] || !chosen || chosen.disabled) return;
+  step.selected = index;
+  markPicked(step.itineraries, `flight-${s}-`, index);
+  updatePlanButton();
+}
+
+function updatePlanButton() {
+  const btn = document.getElementById("confirmBtn");
+  const grantSteps = bookPlan.filter(s => s.type === "grant");
+  const missing = grantSteps.filter(s => s.selected === null).length;
+  btn.disabled = !!missing;
+  btn.textContent = missing
+    ? (grantSteps.length > 1 ? `Choose ${plural(missing, "more Grant flight")}` : "Choose a Grant flight first")
+    : (grantSteps.length > 1 ? "Book the Grant parts" : "Book the Grant part");
+  if (!missing) btn.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
 function renderBook(el) {
   selectedFlight = null;
+  bookPlan = null;
   // Fewer steps: start from the Profile home airport, else the village picked on the Map page, if it is bookable.
   const bookable = code => code && BOOK_AIRPORTS.find(a => airportCodeOf(a) === code);
   const here = bookable(getSettings().homeAirport) || bookable(state.paxMapLocation) || "";
@@ -815,7 +1048,7 @@ function renderBook(el) {
 
 function resetConfirmBtn() {
   const btn = document.getElementById("confirmBtn");
-  if (btn) { btn.disabled = true; btn.textContent = "Choose a flight first"; }
+  if (btn) { btn.disabled = true; btn.hidden = false; btn.textContent = "Choose a flight first"; }
 }
 
 function updateFlightList() {
@@ -824,6 +1057,7 @@ function updateFlightList() {
   const listEl = document.getElementById("flightList");
   if (!listEl) return;
   selectedFlight = null;
+  bookPlan = null;
   resetConfirmBtn();
   if (!from || !to) {
     listEl.innerHTML = `<p class="meta">Choose where you are leaving from and where you are going to see flights.</p>`;
@@ -835,31 +1069,18 @@ function updateFlightList() {
     return;
   }
 
-  bookItineraries = getItineraries(from, to);
-  // A flight that has already left today can't be booked for today.
   const date = document.getElementById("date")?.value;
-  const now = new Date();
-  const gone = it => { const d = dateAt(date, it.dep); return !!d && d <= now; };
-  const allGone = bookItineraries.length && bookItineraries.every(gone);
+  bookItineraries = getItineraries(from, to);
+  if (!bookItineraries.length) {
+    // Grant can't do it alone: show the trip as parts if a partner airline fills the gap.
+    const steps = planTrip(airportCodeOf(from), airportCodeOf(to));
+    if (steps && steps.some(s => s.type === "partner")) return renderPartnerPlan(listEl, steps, date);
+  }
   listEl.innerHTML = !bookItineraries.length
     ? `<p class="meta">No flights for this trip in the prototype yet. Call us and we can help.</p>`
     : `
     <p class="step-label" style="font-weight:600; margin-bottom:0.5rem;">5. Tap a flight to choose it</p>
-    ${allGone ? `<p class="meta" style="margin-bottom:0.5rem;">Today's flights on this trip have already left. Please choose another day.</p>` : ""}
-    ${bookItineraries.map((it, i) => gone(it) ? `
-      <button type="button" class="card itin-card" id="flight-${i}" disabled>
-        <div class="itin-times">Leaves ${it.dep} → Lands ${it.arr}</div>
-        <div class="meta">Flight ${it.num} · Already left today</div>
-      </button>` : `
-      <button type="button" class="card itin-card" onclick="selectFlight(${i})" id="flight-${i}" aria-pressed="false">
-        <div class="itin-times">Leaves ${it.dep} → Lands ${it.arr}</div>
-        ${it.direct
-          ? `<div class="meta">Flight ${it.num} · ${it.legs[0].dur} <span class="itin-tag">Nonstop</span></div>`
-          : `${itineraryLegsHtml(it.legs, it.connections)}<div class="itin-total">${stopsText(it)}</div>`}
-        <div class="meta">Open seating</div>
-        <span class="itin-pick" id="flight-pick-${i}">Tap to choose</span>
-      </button>
-    `).join("")}
+    ${itinCardsHtml(bookItineraries, date, "flight-", i => `selectFlight(${i})`)}
   `;
 }
 
@@ -867,15 +1088,7 @@ function selectFlight(index) {
   const chosen = document.getElementById("flight-" + index);
   if (!bookItineraries[index] || !chosen || chosen.disabled) return;
   selectedFlight = bookItineraries[index];
-
-  bookItineraries.forEach((_, i) => {
-    const card = document.getElementById("flight-" + i);
-    const pick = document.getElementById("flight-pick-" + i);
-    if (!card || card.disabled) return;
-    card.classList.toggle("selected", i === index);
-    card.setAttribute("aria-pressed", String(i === index));
-    if (pick) pick.textContent = i === index ? "✓ Chosen" : "Tap to choose";
-  });
+  markPicked(bookItineraries, "flight-", index);
 
   const btn = document.getElementById("confirmBtn");
   btn.disabled = false;
@@ -883,17 +1096,10 @@ function selectFlight(index) {
   btn.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
-function bookFlight() {
-  if (!selectedFlight) return alert("Please choose a flight");
-  const from = document.getElementById("from").value;
-  const to = document.getElementById("to").value;
-  const date = document.getElementById("date").value || localDateISO(new Date());
-  const pax = document.getElementById("pax").value;
-
-  const it = selectedFlight;
+function tripFromItinerary(it, from, to, date, pax) {
   // flightNum is the first leg so delays, manifests and the boarding pass key off the flight you board first.
-  const trip = {
-    id: Date.now().toString(),
+  return {
+    id: Date.now().toString() + Math.floor(Math.random() * 1000),
     from, to, date, pax,
     flightNum: it.legs[0].num,
     itineraryNum: it.num,
@@ -909,24 +1115,45 @@ function bookFlight() {
     boardingPass: null,
     passengerName: "Passenger " + Math.floor(Math.random()*100)
   };
-  state.trips.push(trip);
-  getManifestEntryForTrip(trip);
+}
+
+function bookFlight() {
+  const date = document.getElementById("date").value || localDateISO(new Date());
+  const pax = document.getElementById("pax").value;
+  let trips;
+  let partnerSteps = [];
+  if (bookPlan) {
+    const grantSteps = bookPlan.filter(s => s.type === "grant");
+    if (!grantSteps.length || grantSteps.some(s => s.selected === null)) return alert("Please choose a Grant flight for each Grant part");
+    trips = grantSteps.map(s => tripFromItinerary(s.itineraries[s.selected], airportLabel(s.from), airportLabel(s.to), date, pax));
+    partnerSteps = bookPlan.filter(s => s.type === "partner");
+  } else {
+    if (!selectedFlight) return alert("Please choose a flight");
+    trips = [tripFromItinerary(selectedFlight, document.getElementById("from").value, document.getElementById("to").value, date, pax)];
+  }
+  trips.forEach(trip => {
+    state.trips.push(trip);
+    getManifestEntryForTrip(trip);
+  });
   saveData(state);
   // Land on My Trips with a confirmation screen; Back from here shows the trips list.
   pageHistory.push(currentPage);
   currentPage = "trips";
   renderNav();
   render();
-  showBookingConfirmation(trip.id);
+  showBookingConfirmation(trips.map(t => t.id), partnerSteps);
 }
 
-function showBookingConfirmation(id) {
-  const trip = state.trips.find(t => t.id === id);
-  if (!trip) return;
+// ids: the Grant trips just booked (one per Grant part). partnerSteps: parts still to book with another airline.
+function showBookingConfirmation(ids, partnerSteps = []) {
+  const trips = [].concat(ids).map(id => state.trips.find(t => t.id === id)).filter(Boolean);
+  if (!trips.length) return;
   const el = document.getElementById("content");
+  const many = trips.length > 1;
   el.innerHTML = `
     ${pageTopHtml("You're booked", "render()")}
-    ${confirmBannerHtml("Your flight is booked.")}
+    ${confirmBannerHtml(many ? "Your Grant flights are booked." : "Your flight is booked.")}
+    ${trips.map(trip => `
     <div class="card pass-rows">
       <div><span>From</span><b>${trip.from}</b></div>
       <div><span>To</span><b>${trip.to}</b></div>
@@ -936,8 +1163,16 @@ function showBookingConfirmation(id) {
       <div><span>Flight</span><b>${trip.itineraryNum || trip.flightNum}</b></div>
       <div><span>People</span><b>${peopleText(trip.pax)}</b></div>
       <div><span>Seating</span><b>Open seating</b></div>
-    </div>
-    <button class="btn" onclick="checkIn('${trip.id}')">${icon("check")}<span>Check in now</span></button>
+    </div>`).join("")}
+    ${partnerSteps.length ? `
+    <div class="card trip-step partner-step">
+      <p class="partner-who">Don't forget: you still need to book the other airline</p>
+      ${partnerSteps.map(step => `
+        <div class="itin-times" style="margin-top:0.5rem;">${airportLabel(step.from)} → ${airportLabel(step.to)}</div>
+        <p>Flown by ${airlineNames(step)} (not Grant). Check times on their site.</p>
+        ${partnerButtonsHtml(step)}`).join("")}
+    </div>` : ""}
+    <button class="btn" onclick="checkIn('${trips[0].id}')">${icon("check")}<span>Check in now</span></button>
     <button class="btn btn-outline" onclick="render()">${icon("trips")}<span>See my trips</span></button>
     ${helpButtonHtml()}
   `;
@@ -1943,7 +2178,7 @@ function showLivePlanes() {
 function getKnownFlights() {
   const byNum = new Map();
   Object.keys(MOCK_FLIGHTS).forEach(key => {
-    const route = key === "default" ? "Other routes" : key.split("-").join(" → ");
+    const route = key.split("-").join(" → ");
     MOCK_FLIGHTS[key].forEach(f => {
       if (!byNum.has(f.num)) byNum.set(f.num, { num: f.num, route, dep: f.dep });
     });
@@ -2064,7 +2299,6 @@ function scheduledDepartures() {
   };
   const postedDep = (num, dep) => toMinutes((state.delays[num] && state.delays[num].newDepTime) || dep);
   Object.keys(MOCK_FLIGHTS).forEach(key => {
-    if (key === "default") return;
     const [from, to] = key.split("-").map(airportCodeOf);
     MOCK_FLIGHTS[key].forEach(f => add(f.num, from, `${from} → ${to}`, postedDep(f.num, f.dep)));
   });

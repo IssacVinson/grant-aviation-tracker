@@ -398,6 +398,15 @@ h3 { margin-bottom: 0.5rem; font-size: 1.15rem; }
 .itin-total { margin-top: 0.35rem; font-size: 0.95rem; color: var(--muted); }
 .itin-trip { margin: 0.5rem 0; padding-top: 0.5rem; border-top: 1px solid var(--border); }
 
+/* Book: a trip in parts when another airline flies some of it */
+.trip-step { border-width: 2px; }
+.grant-step { border-color: var(--accent); }
+.partner-step { border-color: #9a9a9a; border-style: dashed; }
+.step-num { font-size: 0.95rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.partner-who { font-size: 1.1rem; font-weight: 700; margin: 0.4rem 0; }
+.partner-btn { min-height: max(var(--tap), 3.4rem); font-size: 1.1rem; }
+.btn[hidden] { display: none; }
+
 .qr-container {
   background: #fff;
   width: 260px;
